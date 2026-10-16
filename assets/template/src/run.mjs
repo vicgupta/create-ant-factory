@@ -102,7 +102,7 @@ async function main() {
     throw new Error("No free worker in time")
   }
   const { worker, box } = claim
-  console.log(`Worker ${worker.id} (${worker.agent}) claimed. Box: ${worker.boxName} (${box.id})`)
+  console.log(`Worker ${worker.id} (${worker.agent}) claimed. ${box.kind === "docker" ? "Container" : "Box"}: ${box.id}`)
 
   try {
     await removeLabel(repo.repo, issue.number, labels.ready)
@@ -197,7 +197,7 @@ async function main() {
       head: branch,
       base: repo.baseBranch,
       title,
-      body: `Closes #${issue.number}\n\n${result.summary || "(The agent gave no summary.)"}\n\n---\nBuilt by factory worker \`${worker.id}\` (${worker.agent}) in an Upstash Box. ${checkLine}${runUrl ? ` [Factory run](${runUrl}).` : ""}`,
+      body: `Closes #${issue.number}\n\n${result.summary || "(The agent gave no summary.)"}\n\n---\nBuilt by factory worker \`${worker.id}\` (${worker.agent}) in ${box.kind === "docker" ? "a Docker container" : "an Upstash Box"}. ${checkLine}${runUrl ? ` [Factory run](${runUrl}).` : ""}`,
     })
     console.log(`\nPull request: ${pr.html_url}`)
 

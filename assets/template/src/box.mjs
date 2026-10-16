@@ -1,6 +1,8 @@
 // Claiming, using and releasing a worker Box.
 import { Box } from "@upstash/box"
 import { getWorkerStates, pickWorker } from "./workers.mjs"
+import { workerProvider } from "./config.mjs"
+import { createDockerWorker, removeDockerWorker } from "./docker.mjs"
 
 const BOX_TIMEOUT_MS = 15 * 60 * 1000
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
@@ -152,6 +154,7 @@ export const browserMissingHelp = (config, agentName) =>
 // listens on port 9222 inside the Box, where a tool such as agent-browser can
 // attach to it. A job goes on without a browser when this fails.
 export async function startBrowser(box, config) {
+  if (box?.kind === "docker") return false // no Upstash Chromium in a container; the agent uses any browser installed in the image
   if (!wantsBrowser(config)) return false
   try {
     await box.browser.tab.create("about:blank")
@@ -185,6 +188,34 @@ export const imageFor = (config, agentName) => config.agents[agentName].snapshot
 // at the same moment and pick the same worker, so each run also adds its own
 // run label. If two run labels show up, the higher one backs off.
 export async function claimWorker(config, issueLabels, runId) {
+  // Docker provider: no pool to claim from. Pick a worker with no running
+  // container, then start its one-job container. The running container is
+  // the busy marker other runs see (getWorkerStates), so two runs starting
+  // together can still race in the gap before `docker run` returns; the
+  // workflow's per-issue concurrency and the one-container-per-worker pick
+  // make that window small, and a lost race fails on the container name.
+  if (workerProvider(config) === "docker") {
+    const deadline = Date.now() + (config.factory.waitForWorkerMinutes ?? 30) * 60 * 1000
+    for (let attempt = 0; Date.now() < deadline; attempt++) {
+      const spread = Number(String(runId).replace(/\D/g, "").slice(-6)) + attempt
+      const worker = pickWorker(await getWorkerStates(config), issueLabels, spread, config.agents)
+      if (!worker) {
+        console.log("No free worker. Checking again in 30 seconds.")
+        await sleep(30_000)
+        continue
+      }
+      const box = await createDockerWorker(config, worker, runId)
+      try {
+        await applyBoxSettings(box, config, worker.agent)
+      } catch (error) {
+        await removeDockerWorker(box)
+        throw error
+      }
+      return { worker, box, runLabel: null, provider: "docker" }
+    }
+    return null
+  }
+
   const runLabel = `run-${runId}`.slice(0, 20)
   const deadline = Date.now() + (config.factory.waitForWorkerMinutes ?? 30) * 60 * 1000
 
@@ -233,6 +264,13 @@ export async function claimWorker(config, issueLabels, runId) {
 
 export async function releaseWorker(config, claim) {
   const { box, runLabel, worker } = claim
+  // Docker: removing the container is the release. It also wipes the
+  // workspace and every sign-in file written for the job.
+  if (claim.provider === "docker" || box?.kind === "docker") {
+    await removeDockerWorker(box)
+    console.log(`Released worker ${worker.id} and removed its container.`)
+    return
+  }
   try {
     await box.labels.remove(runLabel)
     await box.labels.remove(config.factory.busyLabel)
