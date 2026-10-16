@@ -2,7 +2,7 @@
 //
 // Run with: node --env-file=.env src/run.mjs owner/app-repo 12
 import { loadConfig, findRepo } from "./config.mjs"
-import { getIssue, getHumanComments, addLabels, removeLabel, comment, openPullRequest } from "./github.mjs"
+import { getIssue, getHumanComments, trustedComments, addLabels, removeLabel, comment, openPullRequest } from "./github.mjs"
 import { claimWorker, releaseWorker, sh, q, runScript, startBrowser } from "./box.mjs"
 import { signIn, writeJobFiles, writeRepoEnv, runAgent, secretPaths, REPO_ENV_FILE } from "./agents.mjs"
 import { collectSecrets, redactSecrets } from "./redact.mjs"
@@ -147,7 +147,11 @@ async function main() {
     }
 
     await writeRepoEnv(box, repo)
-    const comments = await getHumanComments(repo.repo, issue.number)
+    const allComments = await getHumanComments(repo.repo, issue.number)
+    const comments = trustedComments(allComments, { allowedActors: config.factory.allowedActors, issueAuthor: issue.user?.login })
+    if (comments.length < allComments.length) {
+      console.log(`Left ${allComments.length - comments.length} comment(s) out of the prompt: not from the issue author or factory.allowedActors.`)
+    }
     const setup = await runCommands(box, "setup", repoDir, jobDir, repo.setup, stepMinutes)
     if (!setup.passed) {
       await needsAttention(`The repo's setup command \`${setup.command}\` failed in the worker Box, so the agent was not started. This is a factory or worker image problem, not a problem with the issue.\n\n${details("Setup output", setup.output)}`)

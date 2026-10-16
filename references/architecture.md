@@ -29,7 +29,7 @@ The GitHub runner does the orchestration and holds the secrets. The Box only doe
 2. Claim a free worker (see below). Create its Box if missing, resume it if paused.
 3. On the issue: remove `ready`, add `factory:running`, comment with the worker name and a link to the run.
 4. In the Box: delete the old workspace and any saved git credentials, clone the repo with the token in the URL and git's credential helper switched off, reset the remote URL to the token-free one, create the branch `factory/issue-N`, set the git author from the config, add the repo's `exclude` patterns, run the repo's setup commands as one bash login script. A failing setup hands the issue back as a factory problem and the agent is not started.
-5. Write the agent's sign-in files and its `jobFiles`, then run the agent in the background. Its prompt holds the issue's title, body and the comments people wrote, plus the factory's rules, which win over any house rules file. Poll until it exits or times out. The model and effort are already in the Box.
+5. Write the agent's sign-in files and its `jobFiles`, then run the agent in the background. Its prompt holds the issue's title, body and the comments written by the issue's author or someone on `allowedActors` (other people's comments are left out), plus the factory's rules, which win over any house rules file. Poll until it exits or times out. The model and effort are already in the Box.
 6. Decide:
    - agent exit code not zero: needs attention, with the log tail
    - reply starts with `NEEDS_CLARIFICATION:`: needs attention, with the question

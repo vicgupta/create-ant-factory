@@ -60,3 +60,13 @@ export async function getHumanComments(repo, number) {
   const comments = await github(`/repos/${repo}/issues/${number}/comments?per_page=100`)
   return comments.filter((c) => !c.body?.includes(FACTORY_MARK)).map((c) => ({ author: c.user?.login, body: c.body ?? "" }))
 }
+
+// Keeps only the comments a trusted person wrote: someone on
+// factory.allowedActors, or the issue's author, whose body the prompt already
+// holds. On a public repo anyone can comment after the ready label is added,
+// and the agent runs with its sign-in secrets, so a stranger's comment must
+// never reach the prompt. GitHub logins are case-insensitive.
+export function trustedComments(comments, { allowedActors = [], issueAuthor } = {}) {
+  const trusted = new Set([...allowedActors, issueAuthor].filter(Boolean).map((login) => login.toLowerCase()))
+  return comments.filter((c) => c.author && trusted.has(c.author.toLowerCase()))
+}
