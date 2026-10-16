@@ -53,11 +53,17 @@ export async function openPullRequest(repo, { head, base, title, body }) {
   return github(`/repos/${repo}/pulls`, { method: "POST", body: { head, base, title, body } })
 }
 
-
 // Comments written by people, oldest first. A user who answers the agent's
-// question in a comment is heard this way.
+// question in a comment is heard this way. GitHub returns at most 100 comments
+// per page, oldest first, so every page is read: on a long or often-retried
+// issue the newest answer would otherwise be the one that gets dropped.
 export async function getHumanComments(repo, number) {
-  const comments = await github(`/repos/${repo}/issues/${number}/comments?per_page=100`)
+  const comments = []
+  for (let page = 1; ; page++) {
+    const batch = await github(`/repos/${repo}/issues/${number}/comments?per_page=100&page=${page}`)
+    comments.push(...batch)
+    if (batch.length < 100) break
+  }
   return comments.filter((c) => !c.body?.includes(FACTORY_MARK)).map((c) => ({ author: c.user?.login, body: c.body ?? "" }))
 }
 
