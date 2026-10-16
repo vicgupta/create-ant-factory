@@ -4,7 +4,7 @@
 //
 // Run with: node --env-file=.env scripts/check-setup.mjs
 import { spawnSync } from "node:child_process"
-import { readFileSync } from "node:fs"
+import { existsSync, readFileSync } from "node:fs"
 import { Box } from "@upstash/box"
 import { loadConfig, usedAgents } from "../src/config.mjs"
 import { readSecret } from "../src/agents.mjs"
@@ -24,6 +24,8 @@ for (const tool of ["git", "gh"]) {
 const gh = spawnSync("gh", ["auth", "status"], { encoding: "utf8" })
 const ghText = `${gh.stdout}${gh.stderr}`
 gh.status === 0 ? ok(`gh is signed in${/workflow/.test(ghText) ? "" : ". Its token may lack the workflow scope, which pushing workflow files needs"}`) : bad("gh is not signed in. Run: gh auth login")
+
+existsSync(new URL("../package-lock.json", import.meta.url)) ? ok("package-lock.json exists") : bad("package-lock.json is missing. Run npm install and commit it: the Factory workflow runs npm ci, which fails without it")
 
 console.log("\nConfig")
 let config
