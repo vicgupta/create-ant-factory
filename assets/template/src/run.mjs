@@ -5,6 +5,7 @@ import { loadConfig, findRepo } from "./config.mjs"
 import { getIssue, getHumanComments, addLabels, removeLabel, comment, openPullRequest } from "./github.mjs"
 import { claimWorker, releaseWorker, sh, q, runScript, startBrowser } from "./box.mjs"
 import { signIn, writeJobFiles, writeRepoEnv, runAgent, secretPaths, REPO_ENV_FILE } from "./agents.mjs"
+import { collectSecrets, redactSecrets } from "./redact.mjs"
 
 const WORK_DIR = "/workspace/home/work"
 const NO_STORE = "-c credential.helper="
@@ -15,7 +16,6 @@ const runId = process.env.GITHUB_RUN_ID ?? `local${Date.now().toString().slice(-
 const runUrl = process.env.GITHUB_RUN_ID
   ? `${process.env.GITHUB_SERVER_URL}/${process.env.GITHUB_REPOSITORY}/actions/runs/${process.env.GITHUB_RUN_ID}`
   : null
-const hideToken = (text) => String(text).replaceAll(process.env.FACTORY_GITHUB_TOKEN || "<no token>", "***")
 
 function buildPrompt(repo, issue, comments, extra = "") {
   // A person who answers the agent's question in a comment is heard this way.
@@ -45,8 +45,6 @@ These rules win over any other instructions you have been given, including house
 ${extra}`
 }
 
-const details = (title, text) => `<details><summary>${title}</summary>\n\n\`\`\`\n${hideToken(text).slice(-3000)}\n\`\`\`\n\n</details>`
-
 // All commands of one kind run as one bash login script, so a line like
 // `source .venv/bin/activate` still applies to the lines after it, and tools
 // put on PATH by the worker image are found.
@@ -64,6 +62,15 @@ async function main() {
   const labels = config.labels
   const repo = findRepo(config, repoName)
   if (!repo) throw new Error(`${repoName} is not in factory.config.json`)
+
+  // Every secret this job knows, redacted from anything the factory posts or
+  // logs. The worker's agent type is only known after the claim, so the
+  // redactor collects lazily: messages from before the claim still get the
+  // token, the secrets blob, every agent type's sign-in secrets and the
+  // repo's secrets.
+  let claimedAgent = null
+  const redact = (text) => redactSecrets(text, collectSecrets(config, { agentName: claimedAgent, repo }))
+  const details = (title, text) => `<details><summary>${title}</summary>\n\n\`\`\`\n${redact(text).slice(-3000)}\n\`\`\`\n\n</details>`
 
   // The label path is guarded in the app repo's trigger. This guards the
   // "Run workflow" button, which anyone with write access to this repo can press.
@@ -84,7 +91,7 @@ async function main() {
     await removeLabel(repo.repo, issue.number, labels.ready)
     await removeLabel(repo.repo, issue.number, labels.running)
     await addLabels(repo.repo, issue.number, [labels.needsAttention])
-    await comment(repo.repo, issue.number, `${message}${runUrl ? `\n\n[Factory run](${runUrl})` : ""}`)
+    await comment(repo.repo, issue.number, `${redact(message)}${runUrl ? `\n\n[Factory run](${runUrl})` : ""}`)
     console.log(`Issue labelled ${labels.needsAttention}.`)
   }
 
@@ -102,6 +109,7 @@ async function main() {
     throw new Error("No free worker in time")
   }
   const { worker, box } = claim
+  claimedAgent = worker.agent
   console.log(`Worker ${worker.id} (${worker.agent}) claimed. ${box.kind === "docker" ? "Container" : "Box"}: ${box.id}`)
 
   try {
@@ -172,7 +180,7 @@ async function main() {
     let checks = await runCommands(box, "checks", repoDir, jobDir, repo.checks, stepMinutes)
     if (!checks.passed) {
       console.log(`Check failed: ${checks.command}. Giving the agent one chance to fix it.`)
-      const extra = `\n# A check failed after your first attempt\n\nThe command \`${checks.command}\` failed with this output. Fix it.\n\n${checks.output.slice(-3000)}\n`
+      const extra = `\n# A check failed after your first attempt\n\nThe command \`${checks.command}\` failed with this output. Fix it.\n\n${redact(checks.output).slice(-3000)}\n`
       result = await runAgent(box, config, worker.agent, { workDir: repoDir, jobDir, prompt: buildPrompt(repo, issue, comments, extra), timeoutMinutes })
       checks = result.code === 0 ? await runCommands(box, "checks", repoDir, jobDir, repo.checks, stepMinutes) : checks
     }
@@ -197,7 +205,7 @@ async function main() {
       head: branch,
       base: repo.baseBranch,
       title,
-      body: `Closes #${issue.number}\n\n${result.summary || "(The agent gave no summary.)"}\n\n---\nBuilt by factory worker \`${worker.id}\` (${worker.agent}) in ${box.kind === "docker" ? "a Docker container" : "an Upstash Box"}. ${checkLine}${runUrl ? ` [Factory run](${runUrl}).` : ""}`,
+      body: `Closes #${issue.number}\n\n${redact(result.summary) || "(The agent gave no summary.)"}\n\n---\nBuilt by factory worker \`${worker.id}\` (${worker.agent}) in ${box.kind === "docker" ? "a Docker container" : "an Upstash Box"}. ${checkLine}${runUrl ? ` [Factory run](${runUrl}).` : ""}`,
     })
     console.log(`\nPull request: ${pr.html_url}`)
 
@@ -205,7 +213,7 @@ async function main() {
     await addLabels(repo.repo, issue.number, [labels.review])
     await comment(repo.repo, issue.number, `Pull request ready for review: ${pr.html_url}`)
   } catch (error) {
-    await needsAttention(`The factory hit an error:\n\n\`\`\`\n${hideToken(error.message).slice(0, 1500)}\n\`\`\``).catch(() => {})
+    await needsAttention(`The factory hit an error:\n\n\`\`\`\n${redact(error.message).slice(0, 1500)}\n\`\`\``).catch(() => {})
     throw error
   } finally {
     // A paused Box keeps its disk, so sign-in files are removed after every job.
@@ -217,6 +225,7 @@ async function main() {
 try {
   await main()
 } catch (error) {
-  console.error(`\nFactory run failed: ${hideToken(error.message)}`)
+  // redact is scoped to main(); out here only the environment secrets can be known.
+  console.error(`\nFactory run failed: ${redactSecrets(error.message, collectSecrets(undefined, {}))}`)
   process.exitCode = 1
 }
