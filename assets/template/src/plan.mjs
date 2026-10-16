@@ -5,6 +5,8 @@
 import { loadConfig, findRepo } from "./config.mjs"
 import { getIssue } from "./github.mjs"
 import { getWorkerStates, pickWorker } from "./workers.mjs"
+import { workerProvider } from "./config.mjs"
+import { createDockerWorker } from "./docker.mjs"
 
 const [repoName = process.env.FACTORY_REPO, issueNumber = process.env.FACTORY_ISSUE] = process.argv.slice(2)
 if (!repoName || !issueNumber) {
@@ -48,7 +50,14 @@ async function main() {
     return
   }
 
-  console.log(`\nPlan: worker ${worker.id} (${worker.agent}) would take this issue in Box ${worker.boxName}.`)
+  if (workerProvider(config) === "docker") {
+    // Dry-run in the literal sense: print the exact docker run, start nothing.
+    const { runCommand } = await createDockerWorker(config, worker, "plan", { dryRun: true })
+    console.log(`\nPlan: worker ${worker.id} (${worker.agent}) would take this issue in a new Docker container.`)
+    console.log(`Would run: ${runCommand}`)
+  } else {
+    console.log(`\nPlan: worker ${worker.id} (${worker.agent}) would take this issue in Box ${worker.boxName}.`)
+  }
   console.log(`Branch: ${config.factory.branchPrefix}${issue.number}, base: ${repo.baseBranch}`)
   console.log(`Setup: ${repo.setup.join(" && ") || "none"}. Checks: ${repo.checks.join(" && ") || "none"}`)
   console.log("\nDry run only. Nothing was changed.")

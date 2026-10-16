@@ -5,7 +5,8 @@
   "description": "Turns ready GitHub issues into pull requests with coding agents in Upstash Boxes",
   "scripts": {
     "status": "node --env-file=.env scripts/status.mjs",
-    "plan": "node --env-file=.env src/plan.mjs"
+    "plan": "node --env-file=.env src/plan.mjs",
+    "test": "node --test tests/"
   },
   "dependencies": {
     "@upstash/box": "^0.7.5"

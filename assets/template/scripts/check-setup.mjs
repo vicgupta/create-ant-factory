@@ -6,7 +6,8 @@
 import { spawnSync } from "node:child_process"
 import { existsSync, readFileSync } from "node:fs"
 import { Box } from "@upstash/box"
-import { loadConfig, usedAgents } from "../src/config.mjs"
+import { loadConfig, usedAgents, workerProvider, dockerConfig } from "../src/config.mjs"
+import { dockerSetupStatus } from "../src/docker.mjs"
 import { readSecret } from "../src/agents.mjs"
 import { describeBoxSettings } from "../src/box.mjs"
 
@@ -39,7 +40,8 @@ try {
 
 if (config) {
   console.log("\nSecrets (values are never shown)")
-  const entries = [{ secret: "UPSTASH_BOX_API_KEY" }, { secret: "FACTORY_GITHUB_TOKEN" }, ...usedAgents(config).flatMap((name) => config.agents[name].auth ?? []), ...config.repos.flatMap((r) => r.secrets ?? [])]
+  const provider = workerProvider(config)
+  const entries = [...(provider === "box" ? [{ secret: "UPSTASH_BOX_API_KEY" }] : []), { secret: "FACTORY_GITHUB_TOKEN" }, ...usedAgents(config).flatMap((name) => config.agents[name].auth ?? []), ...config.repos.flatMap((r) => r.secrets ?? [])]
   for (const entry of entries) {
     const value = readSecret(entry)
     value ? ok(`${entry.secret} is set (${value.length} characters)`) : bad(`${entry.secret} has no value in .env${entry.localFile ? ` or in ${entry.localFile}` : ""}`)
@@ -55,8 +57,20 @@ if (config) {
   }
   note("Reachable is not proof of write access. The first dispatch and the first push are the real test.")
 
+  if (provider === "docker") {
+    console.log("\nDocker worker provider")
+    const docker = dockerSetupStatus(config)
+    docker.cli ? ok(`docker CLI is installed${docker.dockerHost ? ` (DOCKER_HOST=${docker.dockerHost})` : " (local or docker context host)"}`) : bad("worker.provider is \"docker\" but the docker CLI is not installed (or not on PATH). Install Docker on the machine that runs the factory, or point DOCKER_HOST at your Docker host")
+    if (docker.cli) {
+      docker.image ? ok(`worker image ${docker.imageName} exists`) : bad(`worker image "${docker.imageName}" is missing. Build it: docker build -f worker/Dockerfile -t ${docker.imageName} .`)
+    }
+    note(`limits from config: cpus ${dockerConfig(config).cpus}, memory ${dockerConfig(config).memory}. One container per job, removed when the job ends`)
+  }
+
   console.log("\nUpstash Box")
-  try {
+  if (provider !== "box") {
+    note("skipped: worker.provider is \"docker\", so no Upstash Box is used")
+  } else try {
     const boxes = await Box.list()
     ok(`the Box key works. ${boxes.length} Boxes on the account`)
 
