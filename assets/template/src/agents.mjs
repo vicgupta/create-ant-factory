@@ -11,26 +11,14 @@
 //   "command": the shell command. {prompt} is a file with the task, {summary}
 //              is the file the agent's final reply must end up in.
 import { existsSync, readFileSync } from "node:fs"
-import { homedir } from "node:os"
 import { q, sh, runScript } from "./box.mjs"
+import { readSecret } from "./secrets.mjs"
+
+export { readSecret } // kept here so existing imports keep working
 
 const HOME = "/workspace/home"
 const ENV_FILE = `${HOME}/.factory/env`
 export const REPO_ENV_FILE = `${HOME}/.factory/repo-env`
-
-// Finds a secret's value. In GitHub Actions every secret arrives as one JSON
-// blob, so adding an agent does not mean editing the workflow. On the user's
-// machine the value comes from .env, or from the entry's "localFile" (for
-// example ~/.codex/auth.json), which is where some CLIs keep their login.
-export function readSecret(entry) {
-  if (process.env[entry.secret]) return process.env[entry.secret]
-  try {
-    const fromActions = JSON.parse(process.env.FACTORY_SECRETS_JSON ?? "{}")[entry.secret]
-    if (fromActions) return fromActions
-  } catch {}
-  const file = entry.localFile?.replace(/^~/, homedir())
-  return file && existsSync(file) ? readFileSync(file, "utf8") : undefined
-}
 
 // Every path the factory writes secrets to, so they can be removed again.
 export function secretPaths(config) {
