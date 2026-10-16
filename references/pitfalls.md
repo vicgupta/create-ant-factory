@@ -85,7 +85,7 @@ An agent that starts a dev server and forgets it leaves it running, and a timed-
 A browser tool may write screenshots or traces into the working folder, and `git add -A` commits them. Put such folders under the repo's `exclude`.
 
 **The clarification marker is not always first.**
-Some CLIs print text before the final reply. The factory looks for `NEEDS_CLARIFICATION:` at the start of any line of the summary. People answer such questions in comments, so the prompt includes the issue's comments. The factory's own comments carry a hidden marker and are left out.
+Some CLIs print text before the final reply. The factory looks for `NEEDS_CLARIFICATION:` at the start of any line of the summary. People answer such questions in comments, so the prompt includes the issue's comments. The factory's own comments carry a hidden marker and are left out. Only comments by the issue's author or someone on `allowedActors` are included: on a public repo anyone can comment after `ready` is added, and the agent runs with its sign-in secrets, so a stranger's comment is a prompt-injection path.
 
 **`process.exit()` after `fetch` crashes Node on Windows** with a libuv assertion. Set `process.exitCode` and return instead.
 
