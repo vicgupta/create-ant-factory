@@ -4,6 +4,9 @@ Every item here happened during the original build. The template already contain
 
 ## Security
 
+**Secrets that the agent or a check prints end up in pull request text.**
+The agent's reply becomes the PR description and failing setup or check output goes into issue comments, so anything printed there is public to the repo. `src/redact.mjs` collects every secret the job knows (the GitHub token, the worker's sign-in secrets, the repo's secrets) and `src/run.mjs` replaces each of them with `***` in everything it posts or logs. Values shorter than 8 characters are skipped, so keep secrets longer than that.
+
 **Git stores the GitHub token on the Box's disk.**
 The Box image configures git with `credential.helper = store`. A clone from a URL that contains the token writes it to `~/.git-credentials`, where the agent can read it. Fix: run the factory's git commands with `-c credential.helper=`, delete `~/.git-credentials` at the start of every job, and reset the remote URL to the token-free one before the agent starts. Verify after the first real run with `box-exec.mjs`.
 
