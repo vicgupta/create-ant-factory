@@ -92,6 +92,22 @@ export function loadConfig(file = CONFIG_FILE) {
     }
   }
 
+  if (config.worker !== undefined) {
+    if (!config.worker || typeof config.worker !== "object" || Array.isArray(config.worker)) {
+      errors.push('"worker" must be an object like { "provider": "box" } or { "provider": "docker", "docker": { ... } }')
+    } else {
+      const provider = config.worker.provider ?? "box"
+      if (!["box", "docker"].includes(provider)) errors.push(`worker.provider "${provider}" must be "box" (the default) or "docker"`)
+      if (provider === "docker" || config.worker.docker !== undefined) {
+        const docker = dockerConfig(config)
+        if (!docker.image) errors.push("worker.docker.image must name the worker image to run")
+        if (!/^[0-9]+(\.[0-9]+)?$/.test(docker.cpus) || Number(docker.cpus) <= 0) errors.push(`worker.docker.cpus "${docker.cpus}" must be a positive number`)
+        if (!/^[0-9]+(\.[0-9]+)?[bkmg]?$/i.test(docker.memory)) errors.push(`worker.docker.memory "${docker.memory}" must look like "4g", "512m" or a byte count`)
+        if (docker.host !== null && (typeof docker.host !== "string" || !docker.host || /\s/.test(docker.host))) errors.push('worker.docker.host must be one Docker endpoint with no spaces (for example "tcp://10.0.1.20:2376"), or left out to use DOCKER_HOST / docker context')
+      }
+    }
+  }
+
   const workerIds = new Set()
   for (const worker of config.workers) {
     if (!/^[a-z0-9-]+$/.test(worker.id ?? "")) errors.push(`worker id "${worker.id}" must be lowercase letters, digits and dashes`)
@@ -103,6 +119,32 @@ export function loadConfig(file = CONFIG_FILE) {
 
   if (errors.length) throw new Error(`factory.config.json:\n  - ${errors.join("\n  - ")}`)
   return config
+}
+
+// Which worker provider runs jobs. Upstash Box is the default so existing
+// factories (no "worker" section at all) keep behaving exactly as before.
+export function workerProvider(config) {
+  return config.worker?.provider ?? "box"
+}
+
+export const DOCKER_DEFAULTS = { image: "create-ant-factory-worker:latest", cpus: "2", memory: "4g" }
+
+// Docker settings with defaults filled in. `host` is optional: when set it
+// wins (passed to the docker CLI as -H); otherwise the CLI's own
+// DOCKER_HOST / docker context decides where it talks.
+export function dockerConfig(config) {
+  const docker = config.worker?.docker ?? {}
+  return {
+    image: docker.image ?? DOCKER_DEFAULTS.image,
+    cpus: String(docker.cpus ?? DOCKER_DEFAULTS.cpus),
+    memory: String(docker.memory ?? DOCKER_DEFAULTS.memory),
+    host: docker.host ?? null,
+  }
+}
+
+// The Docker endpoint a command will actually hit, for display and -H.
+export function dockerHostFor(config, env = process.env) {
+  return dockerConfig(config).host ?? env.DOCKER_HOST ?? null
 }
 
 export function findRepo(config, repoName) {

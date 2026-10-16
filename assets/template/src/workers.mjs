@@ -1,9 +1,24 @@
-// Works out which workers are free. A worker is one named Box. It is busy while
-// its Box carries the busy label.
+// Works out which workers are free. With the Box provider a worker is one
+// named Box, busy while its Box carries the busy label. With the Docker
+// provider (worker.provider: "docker") a worker is busy while a container
+// labelled worker=<id> is running; containers are one-per-job and removed
+// at the end, so there is no paused/idle state to report.
 import { Box } from "@upstash/box"
-import { boxNameFor } from "./config.mjs"
+import { boxNameFor, workerProvider } from "./config.mjs"
+import { listDockerWorkers } from "./docker.mjs"
 
 export async function getWorkerStates(config) {
+  if (workerProvider(config) === "docker") {
+    const containers = await listDockerWorkers(config)
+    return config.workers.map((worker) => {
+      const container = containers.find((c) => c.labels.worker === worker.id)
+      let state = "free"
+      if (!worker.enabled) state = "disabled"
+      else if (container) state = "busy"
+      return { ...worker, boxName: container?.name ?? `${config.factory.boxNamePrefix}${worker.id}`, boxId: container?.name ?? null, boxStatus: container?.status ?? "not created", state }
+    })
+  }
+
   const boxes = await Box.list({ label: config.factory.boxLabel })
   const byName = new Map(boxes.map((b) => [b.name, b]))
 

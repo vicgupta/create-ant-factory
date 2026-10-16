@@ -1,12 +1,15 @@
 // Checks the local setup without changing anything and without printing a
 // secret: tools, the config, which secrets have a value, whether the GitHub
-// token reaches every repo, and whether the Box key works.
+// token reaches every repo, and whether the Box key works. With the Docker
+// provider it also runs verifyDocker() against the target host: one
+// self-removing `docker run --rm <image> true` smoke container, nothing kept.
 //
 // Run with: node --env-file=.env scripts/check-setup.mjs
 import { spawnSync } from "node:child_process"
 import { existsSync, readFileSync } from "node:fs"
 import { Box } from "@upstash/box"
-import { loadConfig, usedAgents } from "../src/config.mjs"
+import { loadConfig, usedAgents, workerProvider, dockerConfig } from "../src/config.mjs"
+import { verifyDocker } from "../src/docker.mjs"
 import { readSecret } from "../src/agents.mjs"
 import { describeBoxSettings } from "../src/box.mjs"
 
@@ -39,7 +42,8 @@ try {
 
 if (config) {
   console.log("\nSecrets (values are never shown)")
-  const entries = [{ secret: "UPSTASH_BOX_API_KEY" }, { secret: "FACTORY_GITHUB_TOKEN" }, ...usedAgents(config).flatMap((name) => config.agents[name].auth ?? []), ...config.repos.flatMap((r) => r.secrets ?? [])]
+  const provider = workerProvider(config)
+  const entries = [...(provider === "box" ? [{ secret: "UPSTASH_BOX_API_KEY" }] : []), { secret: "FACTORY_GITHUB_TOKEN" }, ...usedAgents(config).flatMap((name) => config.agents[name].auth ?? []), ...config.repos.flatMap((r) => r.secrets ?? [])]
   for (const entry of entries) {
     const value = readSecret(entry)
     value ? ok(`${entry.secret} is set (${value.length} characters)`) : bad(`${entry.secret} has no value in .env${entry.localFile ? ` or in ${entry.localFile}` : ""}`)
@@ -55,8 +59,24 @@ if (config) {
   }
   note("Reachable is not proof of write access. The first dispatch and the first push are the real test.")
 
+  if (provider === "docker") {
+    // Creation/setup-time verification against the TARGET host (config
+    // worker.docker.host, else DOCKER_HOST / docker context). The same
+    // verifyDocker() is re-runnable later via scripts/verify-docker.mjs.
+    console.log("\nDocker worker provider (verifying the target host)")
+    const result = await verifyDocker(config)
+    for (const check of result.checks) {
+      if (check.status === "ok") ok(check.message)
+      else if (check.status === "fail") bad(check.message)
+      else note(check.message)
+    }
+    note(`limits from config: cpus ${dockerConfig(config).cpus}, memory ${dockerConfig(config).memory}. One container per job, removed when the job ends. Re-run this any time with: node --env-file=.env scripts/verify-docker.mjs`)
+  }
+
   console.log("\nUpstash Box")
-  try {
+  if (provider !== "box") {
+    note("skipped: worker.provider is \"docker\", so no Upstash Box is used")
+  } else try {
     const boxes = await Box.list()
     ok(`the Box key works. ${boxes.length} Boxes on the account`)
 

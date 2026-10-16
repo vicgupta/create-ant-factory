@@ -17,6 +17,14 @@
     "agentTimeoutMinutes": 25,
     "commandTimeoutMinutes": 15
   },
+  "worker": {
+    "provider": "box",
+    "docker": {
+      "image": "create-ant-factory-worker:latest",
+      "cpus": "2",
+      "memory": "4g"
+    }
+  },
   "labels": {
     "ready": "ready",
     "running": "factory:running",
