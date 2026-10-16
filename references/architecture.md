@@ -75,6 +75,7 @@ factory.config.json          everything a user edits
 src/config.mjs               load and validate the config
 src/workers.mjs              worker states and the pick
 src/box.mjs                  sh() and runScript(), Box settings, create/claim/release a worker Box
+src/docker.mjs               Docker provider: one container per job behind the same exec/files handle (worker.provider: "docker")
 src/agents.mjs               secrets, sign-in files, jobFiles and the agent run
 src/github.mjs               issues, labels, comments, pull requests
 src/plan.mjs                 dry run: what would happen for this issue

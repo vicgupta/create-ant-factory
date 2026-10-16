@@ -2,7 +2,7 @@
 
 Put a `ready` label on a GitHub issue. A coding agent picks it up inside an Upstash Box, makes the change and opens a pull request. You review it and merge it yourself.
 
-Repos, workers and agent types are listed in [factory.config.json](factory.config.json).
+Repos, workers and agent types are listed in [factory.config.json](factory.config.json). Workers run in Upstash Boxes by default; set `"worker": { "provider": "docker", ... }` there to run each job in a Docker container on your own host instead (build `worker/Dockerfile` first).
 
 <!-- Stage 9 of the skill: still to add here are the architecture diagrams,
 how to add a repo, a worker or an agent type. -->

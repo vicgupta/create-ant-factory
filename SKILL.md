@@ -13,6 +13,7 @@ You are helping someone build a small system with one job: they put a `ready` la
 - A tiny **trigger workflow** in each app repo. When an allowed person adds the `ready` label, it sends the repo name and issue number to the factory repo with `repository_dispatch`.
 - The **Factory workflow** in the factory repo. It claims a free worker, runs the agent in that worker's Box, runs the repo's checks, pushes a branch and opens a pull request. Labels on the issue show the state: `ready`, `factory:running`, `factory:review`, `factory:needs-attention`.
 - A pool of **workers**. One worker is one named Upstash Box. Idle Boxes are paused. A worker's agent type decides its sign-in, its command, and the model and effort stored in its Box.
+- **Worker provider (optional).** Box is the default (`"worker": { "provider": "box" }`). Setting `"worker": { "provider": "docker", "docker": { "image": "create-ant-factory-worker:latest", "cpus": "2", "memory": "4g" } }` instead runs each job in one container on a Docker host the user controls (local, or remote via `DOCKER_HOST`), removed when the job ends. Offer it when the work must stay on the user's own host/network; keep Box as the default, and read `references/providers.md` first — Docker shares the host kernel, so it suits the user's own repos, not multi-tenant use.
 
 Nearly everything a user may want to change later lives in `factory.config.json`. `references/config.md` lists every key.
 
@@ -202,4 +203,5 @@ Warn the user beforehand that parallel PRs in one small repo touch the same file
 - `references/agents.md`: sign-in, command lines, and model and effort settings for Claude Code and Codex with a subscription or an API key, and how to add any other agent.
 - `references/upstash-box.md`: the SDK calls the template uses, what a stock Box contains, and where the docs are.
 - `references/worker-image.md`: building and using snapshots.
+- `references/providers.md`: Box vs Docker workers — choosing, Docker setup, cleanup, network shape and the isolation caveat.
 - `references/pitfalls.md`: every bug and surprise from the original build, with cause and fix. Read this before debugging.

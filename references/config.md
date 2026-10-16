@@ -61,6 +61,16 @@ One entry per agent type. The name is 1 to 14 lowercase letters, digits or dashe
 
 All `setup` commands run as one bash login script, and so do all `checks`. State carries from one line to the next, so `python3 -m venv .venv` followed by `source .venv/bin/activate` works, and tools that the worker image put on `PATH` through `/etc/profile.d` are found. The first failing command stops the script, and its name is reported on the issue. A failing setup is reported as a factory problem, not as the agent's fault.
 
+## worker
+
+| Key | Required | Meaning |
+|---|---|---|
+| `provider` | no | `"box"` (default; Upstash Boxes) or `"docker"` (one container per job on your own Docker host). See `providers.md`. |
+| `docker.image` | no | Worker image for the Docker provider. Default `create-ant-factory-worker:latest`, built from `worker/Dockerfile`. |
+| `docker.cpus`, `docker.memory` | no | Per-container limits for the Docker provider (`--cpus` / `--memory`). Defaults `"2"` and `"4g"`. |
+
+The Docker host itself is not config: the docker CLI's `DOCKER_HOST` environment variable or `docker context` decides where it talks.
+
 ## workers
 
 A list of `{ "id": "claude-01", "agent": "claude", "enabled": true }`. The id is lowercase letters, digits and dashes. `enabled: false` parks a worker without deleting its Box. Count the Boxes against the Upstash plan's limit. Paused Boxes count.
