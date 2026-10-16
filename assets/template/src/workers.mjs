@@ -9,7 +9,7 @@ import { listDockerWorkers } from "./docker.mjs"
 
 export async function getWorkerStates(config) {
   if (workerProvider(config) === "docker") {
-    const containers = await listDockerWorkers()
+    const containers = await listDockerWorkers(config)
     return config.workers.map((worker) => {
       const container = containers.find((c) => c.labels.worker === worker.id)
       let state = "free"
