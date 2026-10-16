@@ -48,4 +48,10 @@ node --env-file=.env scripts/release-worker.mjs <worker id>
 node --env-file=.env scripts/apply-box-settings.mjs
 ```
 
+With the Docker worker provider (`"worker": { "provider": "docker" }`), check the Docker host any time with:
+
+```bash
+node --env-file=.env scripts/verify-docker.mjs
+```
+
 The first shows who is free and who is busy. The second frees a worker that a cancelled run left marked busy. The third writes a changed model or effort setting into the Boxes that already exist.

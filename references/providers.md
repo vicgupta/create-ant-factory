@@ -38,18 +38,50 @@ isolation caveat below.
    local run), or set `DOCKER_HOST` (for example
    `DOCKER_HOST=tcp://10.0.1.20:2376`, with TLS) or a `docker context`
    for a remote host. The factory never sets the host itself; the docker
-   CLI's own `DOCKER_HOST`/context decides.
+   CLI's own `DOCKER_HOST`/context decides. Optionally pin it in config with `worker.docker.host` (one endpoint, e.g. `"tcp://10.0.1.20:2376"`); a configured host wins over `DOCKER_HOST`.
 2. Build the worker image:
    `docker build -f worker/Dockerfile -t create-ant-factory-worker:latest .`
    Add toolchains to `worker/Dockerfile` the way `worker/setup.sh` adds
    them to a Box (`references/worker-image.md`); keep its final check.
 3. Set `worker.provider` to `"docker"` and the image/limits under
    `worker.docker` in `factory.config.json`.
-4. Run `node --env-file=.env scripts/check-setup.mjs`. With the Docker
-   provider it flags a missing docker CLI or worker image, and skips the
-   Upstash key/Box checks. `src/plan.mjs` prints the exact `docker run`
+4. Verify the target host at setup time: `node --env-file=.env scripts/check-setup.mjs`.
+   With the Docker provider it runs the full verification (below) against
+   the configured host — not just "a docker CLI exists here" — and skips
+   the Upstash key/Box checks. `src/plan.mjs` prints the exact `docker run`
    command it would use, and starts nothing.
 5. `UPSTASH_BOX_API_KEY` is not needed with this provider.
+
+## Verifying Docker: at setup, and any time later
+
+One implementation (`verifyDocker()` in `src/docker.mjs`) serves both
+moments, always against the configured target (`worker.docker.host`, else
+`DOCKER_HOST` / docker context):
+
+- **At creation/setup time**, `scripts/check-setup.mjs` runs it. Do not
+  treat the factory as set up until it passes with `provider: "docker"`.
+- **On demand, any time after**, run:
+  `node --env-file=.env scripts/verify-docker.mjs`
+  (also `npm run verify-docker`). Add `--pull` to pull the worker image
+  first if it is missing; without it the script changes nothing except
+  one self-removing smoke container.
+
+Each check prints one `ok` / `FIX` line and the command exits non-zero on
+any failure:
+
+1. docker CLI present (and which target it will talk to),
+2. daemon reachable there (`docker version`),
+3. host CPU/RAM sane against `worker.docker` limits, plus docker disk use,
+4. worker image present (or pullable with `--pull`; otherwise the exact
+   `docker build` / `docker pull` commands to run),
+5. smoke: `docker run --rm <image> true` exits 0, with the same limits and
+   no published ports / no Docker socket,
+6. running factory containers are listed (none between jobs is normal).
+
+Run it after building or rebuilding the worker image, after a VPS reboot
+or Docker upgrade, after changing the host/`DOCKER_HOST`, and whenever a
+job fails to claim a Docker worker — it separates "host is down" from
+"agent is broken" in one pass.
 
 Secrets reach the job the same way as with a Box: they are written inside
 the running container at job time (agent sign-in and repo env files,
