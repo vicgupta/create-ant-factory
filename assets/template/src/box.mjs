@@ -34,14 +34,25 @@ export async function sh(box, command, { allowFailure = false } = {}) {
 //
 // A line "#STEP some name" in the body marks a step. The name of the last
 // step that started comes back as `step`, which tells you which check failed.
+
+// The exact command that starts the background script, kept as a pure
+// function so tests can pin the safety shape. stdin is closed explicitly:
+// an open pipe here once made `opencode run` hang inside factory runs, and
+// any command that reads stdin (an agent CLI, a tool the agent installs)
+// would block the run the same way. Nothing the factory launches reads
+// stdin — agents get their prompt from a file — so EOF is always the safe
+// answer. setsid gives the script its own process group, so everything it
+// starts (the agent, a dev server the agent forgot) can be stopped together
+// afterwards.
+export function runScriptLaunchCommand(base) {
+  return `nohup setsid bash -lc ${q(`echo $$ > ${base}.pid; bash ${base}.sh; echo $? > ${base}.exit`)} < /dev/null > /dev/null 2>&1 & echo started`
+}
 export async function runScript(box, { name, dir, body, timeoutMinutes = 20, onTick }) {
   const base = `${dir}/${name}`
   const script = ["#!/bin/bash", `exec > ${base}.log 2>&1`, ...body.map((line) => (line.startsWith("#STEP ") ? `echo ${q(line.slice(6))} > ${base}.step` : line)), ""].join("\n")
   await sh(box, `mkdir -p ${q(dir)} && rm -f ${base}.exit ${base}.step ${base}.log ${base}.pid`)
   await box.files.write({ path: `${base}.sh`, content: script })
-  // setsid gives the script its own process group, so everything it starts (the
-  // agent, a dev server the agent forgot) can be stopped together afterwards.
-  await sh(box, `nohup setsid bash -lc ${q(`echo $$ > ${base}.pid; bash ${base}.sh; echo $? > ${base}.exit`)} > /dev/null 2>&1 & echo started`)
+  await sh(box, runScriptLaunchCommand(base))
   // /bin/kill, because the kill built into the Box's sh does not accept a process group.
   const stopGroup = () => sh(box, `/bin/kill -TERM -- -$(cat ${base}.pid) 2>/dev/null; sleep 1; /bin/kill -KILL -- -$(cat ${base}.pid) 2>/dev/null; true`, { allowFailure: true })
 

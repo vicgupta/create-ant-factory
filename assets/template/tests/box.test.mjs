@@ -4,7 +4,7 @@
 // both rivals so exactly one of them backs off.
 import { test } from "node:test"
 import assert from "node:assert/strict"
-import { runLabelFor } from "../src/box.mjs"
+import { runLabelFor, runScriptLaunchCommand } from "../src/box.mjs"
 
 test("the label fits the 20-character Box label limit, keeping the tail", () => {
   // GitHub run ids arrive as strings; 20 digits would have overflowed the old prefix truncation.
@@ -34,4 +34,21 @@ test("two distinct labels order the same way for both rivals, so exactly one bac
 
 test("the same run id always gets the same label", () => {
   assert.equal(runLabelFor("987654321"), runLabelFor(987654321))
+})
+
+test("the background launch closes stdin so no command can hang reading it", () => {
+  // Regression pin: an open stdin pipe here once made `opencode run` hang
+  // inside factory runs. Agents get their prompt from a file, so closing
+  // stdin is always safe.
+  const command = runScriptLaunchCommand("/workspace/home/work/job/agent")
+  assert.ok(command.includes("< /dev/null"), `launch command: ${command}`)
+})
+
+test("the launch still detaches, drops output, runs the script and reports start", () => {
+  const command = runScriptLaunchCommand("/x/agent")
+  assert.ok(command.includes("nohup setsid bash -lc"))
+  assert.ok(command.includes("> /dev/null 2>&1"))
+  assert.ok(command.includes("bash /x/agent.sh"))
+  assert.ok(command.includes("echo $? > /x/agent.exit"))
+  assert.ok(command.trim().endsWith("& echo started"))
 })
