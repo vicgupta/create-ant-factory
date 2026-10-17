@@ -27,7 +27,7 @@ function load(config) {
   return loadConfig(file)
 }
 
-test("box is the default provider when no worker section exists", () => {
+test("box stays the fallback provider when no worker section exists (backward compatibility)", () => {
   const config = load(baseConfig())
   assert.equal(workerProvider(config), "box")
   assert.equal(dockerConfig(config).image, "create-ant-factory-worker:latest")
