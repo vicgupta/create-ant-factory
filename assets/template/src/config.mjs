@@ -6,6 +6,13 @@ import { pathToFileURL } from "node:url"
 const CONFIG_FILE = new URL("../factory.config.json", import.meta.url)
 const MAX_LABEL_LENGTH = 20 // Upstash Box label limit
 
+// Agent env keys and secret "env" names are written as `export NAME='value'`
+// lines into files the job sources in bash. A name that is not a shell
+// identifier ("MY-VAR", "API KEY", "1TOKEN") makes that `source` fail inside
+// the Box, so the job dies far from the config. Reject it here instead.
+const ENV_NAME = /^[A-Za-z_][A-Za-z0-9_]*$/
+export const isEnvName = (name) => typeof name === "string" && ENV_NAME.test(name)
+
 export function loadConfig(file = CONFIG_FILE) {
   const config = JSON.parse(readFileSync(file, "utf8"))
   // Paths in the config (jobFiles, setup scripts) are relative to the config file.
@@ -86,9 +93,27 @@ export function loadConfig(file = CONFIG_FILE) {
 
   // Every pull request goes to branchPrefix + the issue number. Without the
   // prefix the branch would be "undefined12", a failure that shows up far
-  // from this file, so require it here.
+  // from this file, so require it here. It also has to survive
+  // `git checkout -b` in run.mjs, so it must form a legal branch name once
+  // the issue number is appended. Without this check a prefix like
+  // "factory 2/" fails mid-run, after a worker was already claimed. The
+  // prefix on its own may end with "/" ("factory/" is a fine prefix): the
+  // check runs on a sample branch name, not the bare prefix.
   if (typeof config.factory.branchPrefix !== "string" || !config.factory.branchPrefix) {
     errors.push('factory.branchPrefix must be a non-empty string, for example "factory/issue-"')
+  } else if (!isValidBranchPrefix(config.factory.branchPrefix)) {
+    errors.push(
+      `factory.branchPrefix "${config.factory.branchPrefix}" is not usable in a git branch name. Keep letters, digits, "-", "_" and "/", and do not use spaces or any of ~ ^ : ? * [ \\, ".." or "@{"`,
+    )
+  }
+
+  // Every worker Box (and Docker container) is named boxNamePrefix + worker id,
+  // and check-setup flags any Box whose name starts with the prefix as a clash.
+  // Left out, workers become "undefinedclaude-01"; left empty, every Box on the
+  // account looks like a clash. Letters, digits, ".", "_" and "-" are safe for
+  // both Upstash Box and Docker container names.
+  if (typeof config.factory.boxNamePrefix !== "string" || !/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(config.factory.boxNamePrefix)) {
+    errors.push(`factory.boxNamePrefix must be a non-empty name such as "factory-" (letters, digits, ".", "_" or "-", starting with a letter or digit), not ${JSON.stringify(config.factory.boxNamePrefix)}`)
   }
 
   // A zero, negative or non-numeric timeout also fails far from the cause:
@@ -129,8 +154,12 @@ export function loadConfig(file = CONFIG_FILE) {
       if (!file.from || !file.to?.startsWith("/")) errors.push(`agent "${name}": each jobFiles entry needs "from" (a path in this repo) and "to" (an absolute path in the Box)`)
       else if (!existsSync(new URL(file.from, config.baseUrl))) errors.push(`agent "${name}": jobFiles source "${file.from}" does not exist in this repo`)
     }
+    for (const key of Object.keys(agent.env ?? {})) {
+      if (!isEnvName(key)) errors.push(`agent "${name}": env name "${key}" must be a shell variable name (letters, digits and "_", not starting with a digit)`)
+    }
     for (const entry of agent.auth ?? []) {
       if (!entry.secret || (!entry.env && !entry.file)) errors.push(`agent "${name}": each auth entry needs a secret and an env or a file`)
+      else if (entry.env && !isEnvName(entry.env)) errors.push(`agent "${name}": auth env "${entry.env}" must be a shell variable name (letters, digits and "_", not starting with a digit)`)
     }
   }
 
@@ -143,8 +172,19 @@ export function loadConfig(file = CONFIG_FILE) {
     repo.setup ??= []
     repo.checks ??= []
     repo.exclude ??= []
+    // A plain string such as "setup": "npm ci" is an easy slip. It would only
+    // fail inside a claimed worker, after the clone: run.mjs walks the string
+    // one character at a time and then crashes on commands.flatMap, and
+    // plan.mjs crashes on .join. So each of these must be a list of strings.
+    for (const key of ["setup", "checks", "exclude"]) {
+      const list = repo[key]
+      if (!Array.isArray(list) || list.some((item) => typeof item !== "string" || !item.trim())) {
+        errors.push(`repo "${repo.repo}": ${key} must be a list of non-empty strings, for example ${key === "exclude" ? '[".venv/"]' : '["npm ci"]'}, not ${JSON.stringify(list)}`)
+      }
+    }
     for (const entry of repo.secrets ?? []) {
       if (!entry.secret || !entry.env) errors.push(`repo "${repo.repo}": each secrets entry needs a secret (its name in .env and GitHub) and an env (the variable the repo expects)`)
+      else if (!isEnvName(entry.env)) errors.push(`repo "${repo.repo}": secrets env "${entry.env}" must be a shell variable name (letters, digits and "_", not starting with a digit)`)
     }
   }
 
@@ -175,6 +215,22 @@ export function loadConfig(file = CONFIG_FILE) {
 
   if (errors.length) throw new Error(`factory.config.json:\n  - ${errors.join("\n  - ")}`)
   return config
+}
+
+// Git branch names follow git check-ref-format. The issue number is appended
+// to the prefix, so the check runs on a sample branch name instead of the
+// bare prefix: "factory/" alone is not a name, but "factory/12" is fine.
+export function isValidBranchPrefix(prefix) {
+  const name = `${prefix}0`
+  if (name === "@") return false
+  if (name.startsWith("/") || name.endsWith("/") || name.endsWith(".")) return false
+  if (name.includes("..") || name.includes("@{")) return false
+  // No control characters, spaces, or ~ ^ : ? * [ \
+  if (/[\x00-\x20\x7f~^:?*[\]\\]/.test(name)) return false
+  for (const component of name.split("/")) {
+    if (component === "" || component.startsWith(".") || component.endsWith(".lock")) return false
+  }
+  return true
 }
 
 // Which worker provider runs jobs. Upstash Box is the default so existing
