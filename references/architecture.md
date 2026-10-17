@@ -39,7 +39,7 @@ The GitHub runner does the orchestration and holds the secrets. The Box only doe
 8. On the issue: remove `factory:running`, add `factory:review`, comment with the PR link.
 9. Always, in `finally`: delete the sign-in files, remove the busy label, pause the Box.
 
-The agent is told not to commit, push, touch git settings or edit `.github/`. The factory does the git work so that the token is never available to the agent.
+The agent is told not to commit, push, touch git settings or edit `.github/`. The factory does the git work so that the token is never available to the agent, and before it commits it refuses any change under `.github/` (`src/changes.mjs`): the issue gets the needs-attention label and nothing is pushed, because a workflow pushed with the factory token would run with the app repo's secrets.
 
 ## Label states
 
