@@ -10,7 +10,7 @@ Every key, what it does, and whether it is required. `src/config.mjs` validates 
 | `boxNamePrefix` | yes | Every Box is named `<prefix><worker id>`. Pick one nothing else on the Upstash account uses. |
 | `boxLabel` | yes | Label on every Box of this factory. At most 20 characters. The factory only ever lists Boxes with this label. |
 | `busyLabel` | yes | Label a Box carries while it works on an issue. |
-| `branchPrefix` | yes | Branches are `<prefix><issue number>`, for example `factory/issue-12`. Must be a non-empty string, or the loader refuses the config. |
+| `branchPrefix` | yes | Branches are `<prefix><issue number>`, for example `factory/issue-12`. Must be a non-empty string that forms a legal git branch name once the issue number is appended (no spaces or any of `~ ^ : ? * [ \`, no `..`, no `@{`), or the loader refuses the config. |
 | `gitAuthor.name`, `gitAuthor.email` | yes | Author of the factory's commits. The address of a real person on the team, or preview hosts block the deployment. |
 | `allowedActors` | yes | GitHub usernames that may start the factory, by label or by the "Run workflow" button. |
 | `boxLimit` | no | The Upstash plan's Box limit. With it, `check-setup.mjs` works out whether the workers fit next to whatever else is on the account. |
