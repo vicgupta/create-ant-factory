@@ -114,12 +114,15 @@ provider uses:
 node --env-file=.env scripts/release-worker.mjs <worker id>
 ```
 
-It removes every factory container labelled `worker=<id>`; removing a
-container is the whole cleanup, the workspace and every sign-in file go
-with it. By hand it is:
+It removes every factory container labelled `worker=<id>`, running or
+stopped; removing a container is the whole cleanup, the workspace and every
+sign-in file go with it. A stopped one matters too: after a Docker host
+reboot or an OOM kill the job container exits without being removed, so the
+worker shows as free but the container still holds that job's sign-in files.
+By hand it is:
 
 ```bash
-docker ps --filter label=create-ant-factory=true
+docker ps -a --filter label=create-ant-factory=true
 ```
 
 and remove a stuck one with `docker rm -f <name>`. Container names are
