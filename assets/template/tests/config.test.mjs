@@ -49,6 +49,20 @@ test("an empty branchPrefix is rejected", () => {
   assert.throws(() => load({ branchPrefix: "" }), /factory\.branchPrefix must be a non-empty string/)
 })
 
+// A prefix that git would refuse fails here, not mid-run in run.mjs after a
+// worker was already claimed.
+for (const prefix of ["factory 2/", "fac..tory/", "x@{y/", "~branch/", "^wip", "a:b", "q?x", "a*b", "[x", "back\\slash", ".hidden/", "reflog.lock/", "/leading"]) {
+  test(`branchPrefix "${prefix}" is rejected as an illegal git branch name`, () => {
+    assert.throws(() => load({ branchPrefix: prefix }), /factory\.branchPrefix .* is not usable in a git branch name/, `accepted ${JSON.stringify(prefix)}`)
+  })
+}
+
+for (const prefix of ["factory/issue-", "factory/", "a/b-c_d/", "issue-"]) {
+  test(`branchPrefix "${prefix}" is accepted as a legal git branch name`, () => {
+    assert.doesNotThrow(() => load({ branchPrefix: prefix }), `rejected ${JSON.stringify(prefix)}`)
+  })
+}
+
 for (const key of ["waitForWorkerMinutes", "agentTimeoutMinutes", "commandTimeoutMinutes", "imageBuildTimeoutMinutes"]) {
   test(`${key} rejects zero, negative and non-numeric values`, () => {
     for (const value of [0, -5, "30", NaN, null]) {
