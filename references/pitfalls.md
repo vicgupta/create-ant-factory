@@ -31,6 +31,9 @@ The build Box has its own type's `boxSettings` on disk. JSON settings are merged
 **The agent reads text that anyone may have written.**
 It runs with its permission prompts off, holds its own sign-in during the job, and with a browser it also reads web pages. `allowedActors` limits who can label, not who wrote the issue. Read issues before labelling them, above all in public repos.
 
+**Repo names in the config are limited to GitHub's real characters.**
+`factory.repo` and each `repos[].repo` may only contain letters, digits, `.`, `-` and `_` in each half. `install-trigger.mjs` pastes `factory.repo` into the `run:` block of the trigger workflow and `run.mjs` interpolates `repos[].repo` into the remote URL, so a quote, semicolon or `$(...)` in either place would be shell code, not a name. `config.mjs` rejects anything outside that character class. Do not loosen this to "no whitespace".
+
 **Secrets pasted in chat or shown on screen** are exposed. Save them, do not repeat them, and list them for rotation at hand-over.
 
 ## GitHub Actions
