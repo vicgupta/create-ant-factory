@@ -76,40 +76,46 @@ export function requireBoxSettings(config, agentName) {
 // Writes an agent type's default settings into a Box: the model, the reasoning
 // effort, or anything else its CLI reads from a user-level settings file. They
 // live in the Box (and in any snapshot taken from it), not on the command line.
-//
-//   { "path": "...", "format": "json", "values": { ... } }  merged into the JSON file
-//   { "path": "...", "format": "toml", "values": { ... } }  merged as top-level TOML keys
-//   { "path": "...", "format": "text", "content": "..." }   replaces the file
-//
-// Merging matters. Codex, for one, keeps its own entries in config.toml.
+// mergeBoxSetting below works out each file's new content.
 export async function applyBoxSettings(box, config, agentName) {
   requireBoxSettings(config, agentName)
   for (const setting of config.agents[agentName].boxSettings) {
     const dir = setting.path.slice(0, setting.path.lastIndexOf("/"))
     await sh(box, `mkdir -p ${q(dir)}`)
     const existing = (await sh(box, `cat ${q(setting.path)} 2>/dev/null`, { allowFailure: true })).output
-
-    let content = setting.content ?? ""
-    if (setting.format === "json") {
-      let current = {}
-      try {
-        current = JSON.parse(existing || "{}")
-      } catch {}
-      content = JSON.stringify({ ...current, ...setting.values }, null, 2) + "\n"
-    } else if (setting.format === "toml") {
-      // Top-level keys must come before the first [table] header.
-      const lines = existing ? existing.split("\n") : []
-      const firstTable = lines.findIndex((line) => line.trim().startsWith("["))
-      const head = firstTable < 0 ? lines : lines.slice(0, firstTable)
-      const tables = firstTable < 0 ? [] : lines.slice(firstTable)
-      const keys = Object.keys(setting.values)
-      const isOurs = (line) => keys.some((key) => line.trim().startsWith(key) && /^\s*=/.test(line.trim().slice(key.length)))
-      const kept = head.filter((line) => line.trim() && !isOurs(line))
-      const added = Object.entries(setting.values).map(([key, value]) => `${key} = ${JSON.stringify(value)}`)
-      content = [...added, ...kept, "", ...tables].join("\n").trimEnd() + "\n"
-    }
-    await box.files.write({ path: setting.path, content })
+    await box.files.write({ path: setting.path, content: mergeBoxSetting(existing, setting) })
   }
+}
+
+// The new content of one settings file, given what is in it now ("" when it
+// does not exist yet):
+//
+//   { "path": "...", "format": "json", "values": { ... } }  merged into the JSON file
+//   { "path": "...", "format": "toml", "values": { ... } }  merged as top-level TOML keys
+//   { "path": "...", "format": "text", "content": "..." }   replaces the file
+//
+// Merging matters. Codex, for one, keeps its own entries in config.toml.
+export function mergeBoxSetting(existing, setting) {
+  if (setting.format === "json") {
+    let current = {}
+    try {
+      current = JSON.parse(existing || "{}")
+    } catch {}
+    return JSON.stringify({ ...current, ...setting.values }, null, 2) + "\n"
+  }
+  if (setting.format === "toml") {
+    // Top-level keys must come before the first [table] header.
+    const lines = existing ? existing.split("\n") : []
+    const firstTable = lines.findIndex((line) => line.trim().startsWith("["))
+    const head = firstTable < 0 ? lines : lines.slice(0, firstTable)
+    const tables = firstTable < 0 ? [] : lines.slice(firstTable)
+    const keys = Object.keys(setting.values)
+    const isOurs = (line) => keys.some((key) => line.trim().startsWith(key) && /^\s*=/.test(line.trim().slice(key.length)))
+    const kept = head.filter((line) => line.trim() && !isOurs(line))
+    const added = Object.entries(setting.values).map(([key, value]) => `${key} = ${JSON.stringify(value)}`)
+    return [...added, ...kept, "", ...tables].join("\n").trimEnd() + "\n"
+  }
+  return setting.content ?? ""
 }
 
 // One line that says which defaults a Box of this agent type gets. Shown in
@@ -184,6 +190,17 @@ export async function createAgentBox(config, agentName, name, labels) {
 
 export const imageFor = (config, agentName) => config.agents[agentName].snapshotId ?? config.factory.snapshotId ?? null
 
+// The label a run puts on the Box it claims, so a second run that reaches
+// the same worker at the same moment can see the claim and back off (the
+// lower label wins). A Box label holds at most 20 characters, and two runs
+// must never compute the same label: run ids grow at the tail, so keeping
+// the first 20 characters would throw away exactly the digits that tell two
+// runs starting together apart. The last 16 digits fit ("run-" + 16 = 20)
+// and stay readable, so a stale label still matches its run in the console.
+export function runLabelFor(runId) {
+  return `run-${String(runId).replace(/\D/g, "").slice(-16)}`
+}
+
 // Waits for a free worker, then marks its Box busy. Two factory runs can start
 // at the same moment and pick the same worker, so each run also adds its own
 // run label. If two run labels show up, the higher one backs off.
@@ -216,7 +233,7 @@ export async function claimWorker(config, issueLabels, runId) {
     return null
   }
 
-  const runLabel = `run-${runId}`.slice(0, 20)
+  const runLabel = runLabelFor(runId)
   const deadline = Date.now() + (config.factory.waitForWorkerMinutes ?? 30) * 60 * 1000
 
   for (let attempt = 0; Date.now() < deadline; attempt++) {
