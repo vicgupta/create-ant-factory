@@ -95,6 +95,7 @@ export function createRunRecord({ repo, issue, runId, runUrl = null, now = new D
     decisions: [],
     contextBundle: [],
     gate: null,
+    review: null,
   }
 }
 
@@ -152,6 +153,7 @@ export function stepSummary(record) {
     ["Check attempts", record.checkAttempts],
     ["Files changed", record.filesChanged],
     ["Pull request", record.pullRequest],
+    ["Independent review", record.review ? `${record.review.decision} (${record.review.agent}${record.review.counts ? `; ${["critical", "major", "minor"].map((k) => `${record.review.counts[k] ?? 0} ${k}`).join(", ")}` : ""})` : null],
     ["Risk gate", record.gate ? `${record.gate.decision}${record.gate.rules?.length ? ` (${record.gate.rules.join(", ")})` : ""}` : null],
     ["Decisions traced", record.decisions?.length ?? 0],
     ["Context layers", (record.contextBundle ?? []).map((e) => e.layer).filter((v, i, a) => a.indexOf(v) === i).join(", ") || null],
@@ -231,6 +233,12 @@ export function summarizeRecords(records) {
     ...stats(records),
     outcomes,
     reasons,
+    reviews: {
+      reviewed: records.filter((r) => r.review).length,
+      passed: records.filter((r) => r.review?.decision === "pass").length,
+      blocked: records.filter((r) => r.review?.decision === "block").length,
+      errors: records.filter((r) => r.review?.decision === "error").length,
+    },
     byAgent: groupBy(records.filter((r) => r.outcome !== "skipped"), "agent"),
     byProvider: groupBy(records.filter((r) => r.outcome !== "skipped"), "provider"),
   }
@@ -258,6 +266,7 @@ export function formatReport(summary) {
     `- Median time to a new pull request: ${summary.medianMinutesToPr === null ? "—" : `${summary.medianMinutesToPr} min`}`,
     `- Rework: ${summary.revisions} revision run(s) after review, ${summary.checkRetries} run(s) needed a second check attempt`,
     `- Agent time: ${summary.agentMinutes} min in total`,
+    ...(summary.reviews?.reviewed ? [`- Independent review: ${summary.reviews.reviewed} change(s) reviewed, ${summary.reviews.passed} passed, ${summary.reviews.blocked} blocked, ${summary.reviews.errors} did not complete`] : []),
     "",
     "## Outcomes",
     "",

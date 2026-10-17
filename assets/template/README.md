@@ -64,6 +64,15 @@ itself; you only ever add `ready` (and optionally `agent:<name>`).
   in the pull request. Try a change first with
   `node scripts/risk-gate.mjs owner/app --files a,b --lines 120`. Remove
   the block for the old always-ready behavior.
+- Independent reviewer: set `"enabled": true` in the `"reviewer"` block of
+  `factory.config.json` (it ships off) and a second agent session — another
+  agent type when you run more than one — reviews every change before its
+  pull request opens, against the issue, the plan and the past runs the
+  author was shown. A finding at or above `blockOn` (default `critical`)
+  opens the pull request as a draft and parks the issue at
+  `factory:needs-attention`; the findings are listed in the pull request.
+  It adds one agent run per job, so run `node scripts/check-setup.mjs` and
+  raise `timeout-minutes` in `.github/workflows/factory.yml` if it asks.
 - `agent:<name>` — optional. Put this on before `ready` to force a specific
   agent type. The factory reads labels at the moment the run starts.
 

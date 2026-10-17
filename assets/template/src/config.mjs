@@ -3,6 +3,7 @@
 import { existsSync, readFileSync } from "node:fs"
 import { pathToFileURL } from "node:url"
 import { riskGateErrors } from "./gates.mjs"
+import { reviewerErrors } from "./reviewer.mjs"
 
 const CONFIG_FILE = new URL("../factory.config.json", import.meta.url)
 const MAX_LABEL_LENGTH = 20 // Upstash Box label limit
@@ -135,6 +136,11 @@ export function loadConfig(file = CONFIG_FILE) {
   // ready vs draft pull request and when to park at needs-attention
   // (src/gates.mjs). Validated here so a typo'd action fails before a run.
   errors.push(...riskGateErrors(config))
+
+  // Off unless present. An independent reviewer agent session reviews the
+  // staged diff before the pull request opens, and findings at or above
+  // blockOn park the issue (src/reviewer.mjs).
+  errors.push(...reviewerErrors(config))
 
   // Every pull request goes to branchPrefix + the issue number. Without the
   // prefix the branch would be "undefined12", a failure that shows up far
