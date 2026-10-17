@@ -7,6 +7,17 @@ loosely "Keep a Changelog"; versions are git tags (`0.1`, `0.2`, …).
 
 ### Features
 
+- Risk-based human gates (`factory.riskGates`, off for existing configs,
+  shipped in the template; optional per-repo `tier`). After checks pass,
+  `src/gates.mjs` computes ready / draft / needs-attention from touched
+  paths, diff size, missing checks, tier, issue labels/text and failed
+  precedents on the same files; the strictest rule wins and the agent's
+  reply is never an input. Draft and needs-attention open draft PRs;
+  needs-attention parks the issue (`risk-gate`). The decision is listed in
+  the PR body and issue comment, stored on the run record (`gate`) and
+  traced in `decisions[]`. `scripts/risk-gate.mjs` (`npm run risk-gate`)
+  dry-runs a change from `git diff --numstat` or a file list. The loader
+  validates every rule.
 - Plan-first phase (`factory.planFirst`). A separate planning agent run
   writes `plan.md` (files to touch, acceptance criteria each mapped to a
   configured check or `manual-review`); the factory validates it

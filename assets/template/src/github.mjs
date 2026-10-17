@@ -84,13 +84,16 @@ export const comment = (repo, number, body) =>
 ${FACTORY_MARK}` } })
 
 // Opens a pull request, or updates the open one for the same branch.
-export async function openPullRequest(repo, { head, base, title, body }) {
+// draft: true opens it as a draft (a risk gate matched, see src/gates.mjs).
+// GitHub's REST API cannot turn an existing ready pull request into a draft,
+// so an update keeps the pull request's current draft state.
+export async function openPullRequest(repo, { head, base, title, body, draft = false }) {
   const owner = repo.split("/")[0]
   const existing = await github(`/repos/${repo}/pulls?state=open&head=${owner}:${encodeURIComponent(head)}`)
   if (existing.length > 0) {
     return github(`/repos/${repo}/pulls/${existing[0].number}`, { method: "PATCH", body: { title, body } })
   }
-  return github(`/repos/${repo}/pulls`, { method: "POST", body: { head, base, title, body } })
+  return github(`/repos/${repo}/pulls`, { method: "POST", body: { head, base, title, body, ...(draft ? { draft: true } : {}) } })
 }
 
 // Comments written by people, oldest first. A user who answers the agent's

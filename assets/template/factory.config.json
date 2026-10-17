@@ -20,7 +20,44 @@
     "agentTimeoutMinutes": 25,
     "commandTimeoutMinutes": 15,
     "contextGraph": true,
-    "precedentsFile": "precedents.json"
+    "precedentsFile": "precedents.json",
+    "riskGates": {
+      "maxFilesForReady": 15,
+      "maxLinesForReady": 400,
+      "noChecks": "draft",
+      "failedPrecedent": "draft",
+      "rules": [
+        {
+          "name": "migrations-and-infra",
+          "paths": [
+            "migrations/",
+            "**/migrations/**",
+            "infra/",
+            "terraform/",
+            "**/*.sql"
+          ],
+          "action": "needs-attention"
+        },
+        {
+          "name": "sensitive-topics",
+          "keywords": [
+            "auth",
+            "billing",
+            "payment",
+            "secret",
+            "password"
+          ],
+          "action": "draft"
+        },
+        {
+          "name": "critical-service",
+          "tiers": [
+            "critical"
+          ],
+          "action": "draft"
+        }
+      ]
+    }
   },
   "worker": {
     "provider": "docker",

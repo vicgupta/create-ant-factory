@@ -94,6 +94,7 @@ export function createRunRecord({ repo, issue, runId, runUrl = null, now = new D
     files: [],
     decisions: [],
     contextBundle: [],
+    gate: null,
   }
 }
 
@@ -151,6 +152,7 @@ export function stepSummary(record) {
     ["Check attempts", record.checkAttempts],
     ["Files changed", record.filesChanged],
     ["Pull request", record.pullRequest],
+    ["Risk gate", record.gate ? `${record.gate.decision}${record.gate.rules?.length ? ` (${record.gate.rules.join(", ")})` : ""}` : null],
     ["Decisions traced", record.decisions?.length ?? 0],
     ["Context layers", (record.contextBundle ?? []).map((e) => e.layer).filter((v, i, a) => a.indexOf(v) === i).join(", ") || null],
   ]
