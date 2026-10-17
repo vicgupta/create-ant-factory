@@ -7,6 +7,7 @@ import { getIssue } from "./github.mjs"
 import { getWorkerStates, pickWorker } from "./workers.mjs"
 import { workerProvider } from "./config.mjs"
 import { createDockerWorker } from "./docker.mjs"
+import { resumeEnabled, findFactoryPullRequest } from "./review.mjs"
 
 const [repoName = process.env.FACTORY_REPO, issueNumber = process.env.FACTORY_ISSUE] = process.argv.slice(2)
 if (!repoName || !issueNumber) {
@@ -58,7 +59,10 @@ async function main() {
   } else {
     console.log(`\nPlan: worker ${worker.id} (${worker.agent}) would take this issue in Box ${worker.boxName}.`)
   }
-  console.log(`Branch: ${config.factory.branchPrefix}${issue.number}, base: ${repo.baseBranch}`)
+  const branch = `${config.factory.branchPrefix}${issue.number}`
+  const openPr = resumeEnabled(config) ? await findFactoryPullRequest(repo.repo, branch) : null
+  if (openPr) console.log(`Mode: revise pull request #${openPr.number} from its review feedback (factory.resumeFromReview). Branch: ${branch}, normal push.`)
+  else console.log(`Branch: ${branch}, base: ${repo.baseBranch}`)
   console.log(`Setup: ${repo.setup.join(" && ") || "none"}. Checks: ${repo.checks.join(" && ") || "none"}`)
   console.log("\nDry run only. Nothing was changed.")
 }

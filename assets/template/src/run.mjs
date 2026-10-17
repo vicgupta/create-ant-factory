@@ -7,6 +7,7 @@ import { claimWorker, releaseWorker, sh, q, runScript, startBrowser } from "./bo
 import { signIn, writeJobFiles, writeRepoEnv, runAgent, secretPaths, REPO_ENV_FILE } from "./agents.mjs"
 import { collectSecrets, redactSecrets } from "./redact.mjs"
 import { changedPaths, protectedChanges } from "./changes.mjs"
+import { resumeEnabled, findFactoryPullRequest, getReviewState, collectFeedback, failedChecks, feedbackSection } from "./review.mjs"
 
 const WORK_DIR = "/workspace/home/work"
 const NO_STORE = "-c credential.helper="
@@ -18,7 +19,7 @@ const runUrl = process.env.GITHUB_RUN_ID
   ? `${process.env.GITHUB_SERVER_URL}/${process.env.GITHUB_REPOSITORY}/actions/runs/${process.env.GITHUB_RUN_ID}`
   : null
 
-function buildPrompt(repo, issue, comments, extra = "") {
+function buildPrompt(repo, issue, comments, extra = "", revising = null) {
   // A person who answers the agent's question in a comment is heard this way.
   // The comment section is capped so a long thread cannot swallow the agent's
   // context; the newest comments are the ones that matter, and the note below
@@ -30,9 +31,16 @@ function buildPrompt(repo, issue, comments, extra = "") {
   const checks = repo.checks.length
     ? `After you finish, these commands must pass. Run them yourself before you stop:\n${repo.checks.map((c) => `    ${c}`).join("\n")}`
     : "This repo has no automated checks, so read your change again before you stop."
-  return `You are a coding agent. The repository ${repo.repo} is checked out in the current folder on a new branch.
+  // In resume-from-review mode the branch already holds the earlier attempt,
+  // and the agent's job is to revise it, not to start again.
+  const intro = revising
+    ? `You are a coding agent. The repository ${repo.repo} is checked out in the current folder on the branch of pull request #${revising.number}, which already holds an earlier attempt at the issue below.
 
-Implement this GitHub issue.
+Revise that work so it answers the review feedback and fixes the failing checks listed after the issue. Keep what reviewers did not ask to change.`
+    : `You are a coding agent. The repository ${repo.repo} is checked out in the current folder on a new branch.
+
+Implement this GitHub issue.`
+  return `${intro}
 
 # Issue #${issue.number}: ${issue.title}
 
@@ -46,9 +54,9 @@ These rules win over any other instructions you have been given, including house
 - Do not run git commit, git push or change git settings. The factory does that after you.
 - Do not touch anything in .github/.
 - ${checks}
-- When you are done, reply with a short summary of what you changed. It becomes the pull request description.
+- When you are done, reply with a short summary of what you changed. ${revising ? "It becomes the factory's reply on the pull request." : "It becomes the pull request description."}
 - If the issue is too unclear to implement, change nothing and start your reply with "${NEEDS_CLARIFICATION}" followed by your question.
-${extra}`
+${revising?.feedback ?? ""}${extra}`
 }
 
 // All commands of one kind run as one bash login script, so a line like
@@ -135,16 +143,38 @@ async function main() {
     const authedUrl = `https://x-access-token:${token}@github.com/${repo.repo}.git`
     const stepMinutes = config.factory.commandTimeoutMinutes ?? 20
 
+    // Resume-from-review: an open factory pull request for this issue means a
+    // person sent it back. Revise that branch instead of rebuilding it.
+    let revising = null
+    if (resumeEnabled(config)) {
+      const pr = await findFactoryPullRequest(repo.repo, branch)
+      if (pr) {
+        const state = await getReviewState(repo.repo, pr)
+        if (state.checksError) console.log(`Could not read the pull request's checks, so only review comments are used: ${redact(state.checksError).slice(0, 300)}`)
+        const feedback = collectFeedback(state, { allowedActors: config.factory.allowedActors, issueAuthor: issue.user?.login })
+        const failed = failedChecks(state.checkRuns)
+        revising = { number: pr.number, url: pr.html_url, feedback: redact(feedbackSection(pr.number, feedback, failed)) }
+        console.log(`Resuming pull request #${pr.number}: ${feedback.length} review item(s), ${failed.length} failing check(s).`)
+        await removeLabel(repo.repo, issue.number, labels.review)
+        if (!revising.feedback) {
+          await needsAttention(`Pull request #${pr.number} is open for this issue, but it has no review feedback from \`factory.allowedActors\` or the issue author and no failing checks, so the agent has nothing to revise. Leave a review on the pull request, then add the \`${labels.ready}\` label again.`)
+          return
+        }
+      }
+    }
+
     console.log("\nPreparing the workspace...")
     // The Box image tells git to save credentials on disk. NO_STORE switches that
     // off for our commands, and any saved file is removed, so the agent cannot
     // find the GitHub token.
     await sh(box, `rm -rf ${q(repoDir)} ${jobDir} ~/.git-credentials && mkdir -p ${jobDir}`)
-    await sh(box, `git ${NO_STORE} clone --quiet --depth 50 --branch ${q(repo.baseBranch)} ${q(authedUrl)} ${q(repoDir)}`)
+    // A revision clones the pull request's branch itself, so the agent starts
+    // from the reviewed commits and the push below is a normal fast-forward.
+    await sh(box, `git ${NO_STORE} clone --quiet --depth 50 --branch ${q(revising ? branch : repo.baseBranch)} ${q(authedUrl)} ${q(repoDir)}`)
     // The token is removed from the clone here and only used again for the push.
     await sh(
       box,
-      `cd ${q(repoDir)} && git remote set-url origin ${q(`https://github.com/${repo.repo}.git`)} && git checkout --quiet -b ${q(branch)} && git config user.name ${q(config.factory.gitAuthor.name)} && git config user.email ${q(config.factory.gitAuthor.email)}`,
+      `cd ${q(repoDir)} && git remote set-url origin ${q(`https://github.com/${repo.repo}.git`)} && ${revising ? "" : `git checkout --quiet -b ${q(branch)} && `}git config user.name ${q(config.factory.gitAuthor.name)} && git config user.email ${q(config.factory.gitAuthor.email)}`,
     )
     // Things the setup creates inside the repo folder (a virtualenv, caches) must
     // not end up in the pull request when the repo's own .gitignore misses them.
@@ -171,7 +201,7 @@ async function main() {
     // that is when the worker image decides whether a browser tool attaches to it.
     if (await startBrowser(box, config)) console.log("The Box's browser is running.")
     const timeoutMinutes = config.factory.agentTimeoutMinutes ?? 25
-    let result = await runAgent(box, config, worker.agent, { workDir: repoDir, jobDir, prompt: buildPrompt(repo, issue, comments), timeoutMinutes })
+    let result = await runAgent(box, config, worker.agent, { workDir: repoDir, jobDir, prompt: buildPrompt(repo, issue, comments, "", revising), timeoutMinutes })
     console.log(`Agent finished in ${result.minutes} min with exit code ${result.code}.`)
 
     if (result.code !== 0) {
@@ -191,7 +221,7 @@ async function main() {
     if (!checks.passed) {
       console.log(`Check failed: ${checks.command}. Giving the agent one chance to fix it.`)
       const extra = `\n# A check failed after your first attempt\n\nThe command \`${checks.command}\` failed with this output. Fix it.\n\n${redact(checks.output).slice(-3000)}\n`
-      result = await runAgent(box, config, worker.agent, { workDir: repoDir, jobDir, prompt: buildPrompt(repo, issue, comments, extra), timeoutMinutes })
+      result = await runAgent(box, config, worker.agent, { workDir: repoDir, jobDir, prompt: buildPrompt(repo, issue, comments, extra, revising), timeoutMinutes })
       checks = result.code === 0 ? await runCommands(box, "checks", repoDir, jobDir, repo.checks, stepMinutes) : checks
     }
     if (!checks.passed) {
@@ -215,14 +245,32 @@ async function main() {
     }
 
     const title = issue.title
-    await sh(box, `cd ${q(repoDir)} && git commit --quiet -m ${q(`${title}\n\nCloses #${issue.number}`)}`)
-    await sh(box, `cd ${q(repoDir)} && git ${NO_STORE} push --quiet --force ${q(authedUrl)} ${q(`${branch}:${branch}`)}`)
-
     const checkLine = repo.checks.length ? `Checks passed: ${repo.checks.map((c) => `\`${c}\``).join(", ")}.` : "This repo has no automated checks."
     // The summary is whatever the agent wrote into summary.md: unbounded.
     // Without the cap, a runaway reply would fail the PR creation (GitHub
     // caps bodies at 65,536 characters) after the commit and push were made.
     const description = capSummary(redact(result.summary)) || "(The agent gave no summary.)"
+
+    if (revising) {
+      // A normal push, never --force: the reviewed commits stay in the pull
+      // request's history. If someone pushed to the branch meanwhile, git
+      // refuses and the issue goes to needs-attention instead of losing work.
+      await sh(box, `cd ${q(repoDir)} && git commit --quiet -m ${q(`Address review feedback on #${revising.number}\n\nRefs #${issue.number}`)}`)
+      const pushed = await sh(box, `cd ${q(repoDir)} && git ${NO_STORE} push --quiet ${q(authedUrl)} ${q(`${branch}:${branch}`)}`, { allowFailure: true })
+      if (pushed.code !== 0) {
+        await needsAttention(`The revision for pull request #${revising.number} could not be pushed, most likely because the branch changed while the agent worked. Nothing was force-pushed. Add the \`${labels.ready}\` label again to revise from the new branch tip.\n\n${details("Push output", pushed.output ?? "")}`)
+        return
+      }
+      console.log(`\nRevised pull request: ${revising.url}`)
+      await comment(repo.repo, revising.number, `Revised after review by factory worker \`${worker.id}\` (${worker.agent}). ${checkLine}${runUrl ? ` [Factory run](${runUrl}).` : ""}\n\n${description}`)
+      await removeLabel(repo.repo, issue.number, labels.running)
+      await addLabels(repo.repo, issue.number, [labels.review])
+      await comment(repo.repo, issue.number, `Pull request revised and ready for another review: ${revising.url}`)
+      return
+    }
+
+    await sh(box, `cd ${q(repoDir)} && git commit --quiet -m ${q(`${title}\n\nCloses #${issue.number}`)}`)
+    await sh(box, `cd ${q(repoDir)} && git ${NO_STORE} push --quiet --force ${q(authedUrl)} ${q(`${branch}:${branch}`)}`)
     const pr = await openPullRequest(repo.repo, {
       head: branch,
       base: repo.baseBranch,

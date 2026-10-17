@@ -4,7 +4,7 @@ const API = "https://api.github.com"
 
 // Every comment the factory writes carries this hidden marker, so its own
 // comments can be told apart from a person's, even when both use one account.
-const FACTORY_MARK = "<!-- software-factory -->"
+export const FACTORY_MARK = "<!-- software-factory -->"
 
 // A factory run makes a dozen or more GitHub calls in a row (issue, labels,
 // comments, pull request). One transient failure in the middle — a 429 rate

@@ -24,11 +24,20 @@ itself; you only ever add `ready` (and optionally `agent:<name>`).
   still failed after a retry, or nothing changed. Read the issue comments for
   the log tail or the question, fix the issue text if it was unclear, then
   re-add `ready` to run it again.
+- Send a pull request back: review it on GitHub (request changes, leave
+  inline comments), then re-add `ready` to the issue. With
+  `"resumeFromReview": true` in `factory.config.json` (the template's
+  default) the factory checks out the same branch, gives the agent your
+  review and any failing checks, pushes a normal commit on top, replies on
+  the pull request and moves the issue back to `factory:review`. Only
+  feedback from `allowedActors` and the issue author is read.
 - `agent:<name>` — optional. Put this on before `ready` to force a specific
   agent type. The factory reads labels at the moment the run starts.
 
 ```
 (none) --you add--> ready --factory--> factory:running --+--> factory:review --merge PR--> closed
+                      ^                                 |          |
+                      +-------- review the PR, re-add ready -------+
                                                         |
                                                         +--> factory:needs-attention
                                                         (fix the issue, re-add ready)

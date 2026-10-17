@@ -13,6 +13,7 @@
       "OWNER"
     ],
     "browser": true,
+    "resumeFromReview": true,
     "waitForWorkerMinutes": 20,
     "agentTimeoutMinutes": 25,
     "commandTimeoutMinutes": 15
