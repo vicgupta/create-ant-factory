@@ -12,6 +12,7 @@ import { recordsEnabled, recordDir, createRunRecord, noteAgentRun, noteChecks, n
 import { planFirstEnabled, validatePlanText, renderPlanComment, planSection, criteriaChecklist, PLAN_FILE } from "./plan-first.mjs"
 import { contextGraphEnabled, loadPrecedents, findPrecedents, buildContextBundle, parseStampedFacts, verifyProvenance, staleFactsSection } from "./context.mjs"
 import { riskGatesEnabled, gateSettings, evaluateRiskGate, parseNumstat, renderGate } from "./gates.mjs"
+import { reviewerEnabled, reviewerSettings, pickReviewerAgent, buildReviewPrompt, validateReviewText, decideReview, reviewGate, mergeGates, renderReview, REVIEW_FILE, DIFF_FILE } from "./reviewer.mjs"
 
 const WORK_DIR = "/workspace/home/work"
 const NO_STORE = "-c credential.helper="
@@ -142,7 +143,13 @@ async function main() {
   // token, the secrets blob, every agent type's sign-in secrets and the
   // repo's secrets.
   let claimedAgent = null
-  const redact = (text) => redactSecrets(text, collectSecrets(config, { agentName: claimedAgent, repo }))
+  // The independent reviewer may be another agent type, signed in with its
+  // own secrets; those are redacted too once it is picked.
+  let reviewerAgent = null
+  const redact = (text) => redactSecrets(text, [
+    ...collectSecrets(config, { agentName: claimedAgent, repo }),
+    ...(reviewerAgent && reviewerAgent !== claimedAgent ? collectSecrets(config, { agentName: reviewerAgent, repo }) : []),
+  ])
   const details = (title, text) => `<details><summary>${title}</summary>\n\n\`\`\`\n${redact(text).slice(-3000)}\n\`\`\`\n\n</details>`
 
   // The label path is guarded in the app repo's trigger. This guards the
@@ -428,7 +435,83 @@ async function main() {
       console.log(`Risk gate: ${gate.decision}${gate.reasons.length ? ` (${gate.reasons.map((r) => r.rule).join(", ")})` : ""}.`)
       try { noteDecision(record, { stage: "risk-gate", choice: gate.decision, evidence: staged.slice(0, 10).length ? staged.slice(0, 10) : [repo.repo], policy_or_label: gate.reasons[0]?.rule ?? "risk-gates", outcome: gate.decision === "ready" ? "succeeded" : "pending" }) } catch { /* tracing only */ }
     }
+
+    // Independent reviewer: a second, fresh agent session (another agent
+    // type when the factory has one) reviews the staged diff against the
+    // issue, the plan, the decision trace and the precedents used. The
+    // factory blocks on findings at or above factory.reviewer.blockOn; a
+    // reviewer that fails parks the issue too (onError), so a broken review
+    // never waves a change through. Its reply is not an input either.
+    // Returns { decision: "pass" | "block" | "error", findings, blocking,
+    // counts, blockOn, agent, differentType, minutes, errors }.
+    const runReviewer = async ({ settings, pick }) => {
+      const base = { agent: pick.agent, differentType: pick.differentType, blockOn: settings.blockOn, findings: [], blocking: [], counts: null, minutes: null }
+      // The change as it will be committed: HEAD, the staged diff and any
+      // edit to a tracked file. New untracked files (a coverage folder from
+      // running the tests) do not count; they are cleaned up afterwards.
+      // Everything was staged with git add -A above, so nothing untracked
+      // and unignored existed before the review.
+      const fingerprint = async () => (await sh(box, `cd ${q(repoDir)} && git rev-parse HEAD && git diff --cached --no-renames | git hash-object --stdin && git diff --no-renames | git hash-object --stdin`, { allowFailure: true })).output
+      // Snapshot the staged change, so whatever the reviewer does, the
+      // author's change is exactly what gets committed (or nothing is).
+      const headBefore = (await sh(box, `cd ${q(repoDir)} && git rev-parse HEAD`)).output.trim().split("\n").at(-1).trim()
+      const treeBefore = (await sh(box, `cd ${q(repoDir)} && git write-tree`)).output.trim().split("\n").at(-1).trim()
+      const before = await fingerprint()
+      const diffPath = `${jobDir}/${DIFF_FILE}`
+      const reviewPath = `${jobDir}/${REVIEW_FILE}`
+      try {
+        await sh(box, `cd ${q(repoDir)} && git diff --cached --no-renames > ${q(diffPath)} && rm -f ${q(reviewPath)}`)
+        const diffStat = (await sh(box, `cd ${q(repoDir)} && git diff --cached --stat --no-renames`, { allowFailure: true })).output
+        if (pick.agent !== worker.agent) {
+          await signIn(box, config, pick.agent)
+          await writeJobFiles(box, config, pick.agent)
+        }
+        const precedents = (record.contextBundle ?? []).filter((e) => e.layer === "reasoning")
+        const prompt = buildReviewPrompt({ repo, issue, plan, decisions: record.decisions ?? [], precedents, diffPath, reviewPath, diffStat, revising, blockOn: settings.blockOn })
+        console.log(`\nIndependent review by ${pick.agent}${pick.differentType ? "" : " (same agent type, fresh session)"}...`)
+        const ran = await runAgent(box, config, pick.agent, { workDir: repoDir, jobDir, prompt, timeoutMinutes: settings.timeoutMinutes })
+        base.minutes = ran.minutes
+        const errors = []
+        if (ran.code !== 0) errors.push(`the reviewer stopped with exit code ${ran.code}`)
+        if ((await fingerprint()) !== before) errors.push("the reviewer changed the repository, which it must not do; the author's staged change was restored")
+        const text = (await sh(box, `cat ${q(reviewPath)} 2>/dev/null`, { allowFailure: true })).output
+        if (!errors.length) {
+          const { review: parsed, errors: invalid } = validateReviewText(text)
+          errors.push(...invalid)
+          if (!errors.length) {
+            const decided = decideReview(parsed.findings, settings)
+            return { ...base, ...decided, findings: parsed.findings }
+          }
+        }
+        return { ...base, decision: "error", errors: errors.map((e) => redact(e)) }
+      } catch (error) {
+        return { ...base, decision: "error", errors: [redact(error.message).slice(0, 300)] }
+      } finally {
+        // Put the author's change back exactly if anything moved, then make
+        // sure it really is back; a mismatch stops the run before any push.
+        await sh(box, `cd ${q(repoDir)} && git clean -fdq`, { allowFailure: true })
+        if ((await fingerprint()) !== before) {
+          await sh(box, `cd ${q(repoDir)} && git reset --quiet --soft ${q(headBefore)} && git read-tree ${q(treeBefore)} && git checkout-index -a -f && git clean -fdq`, { allowFailure: true })
+          if ((await fingerprint()) !== before) throw new Error("The independent reviewer changed the repository and the staged change could not be restored, so nothing was pushed.")
+        }
+      }
+    }
+
+    let review = null
+    if (reviewerEnabled(config)) {
+      const settings = reviewerSettings(config)
+      const pick = pickReviewerAgent(config, worker.agent, settings)
+      reviewerAgent = pick.agent
+      review = await runReviewer({ settings, pick })
+      const rg = reviewGate(review, settings)
+      if (rg && rg.decision !== "ready") gate = mergeGates(gate, rg)
+      record.review = { agent: pick.agent, differentType: pick.differentType, decision: review.decision, counts: review.counts ?? null, minutes: review.minutes ?? null }
+      console.log(`Independent review (${pick.agent}): ${review.decision}${review.findings?.length ? `, ${review.findings.length} finding(s)` : ""}.`)
+      try { noteDecision(record, { stage: "review", choice: review.decision === "error" ? "review did not complete" : `${review.decision}: ${review.findings.length} finding(s), blocking at ${review.blockOn}`, evidence: review.blocking?.length ? review.blocking.slice(0, 10).map((f) => f.location) : staged.slice(0, 10).length ? staged.slice(0, 10) : [repo.repo], policy_or_label: "independent-review", outcome: review.decision === "pass" ? "succeeded" : review.decision === "block" ? "rejected" : "failed" }) } catch { /* tracing only */ }
+    }
     const gateSection = gate ? `\n\n${renderGate(gate)}` : ""
+    const reviewSection = review ? `\n\n${redact(renderReview(review))}` : ""
+    const parkReason = gate?.reasons.some((r) => r.rule === "independent-review" && r.action === "needs-attention") ? (review?.decision === "error" ? "review-error" : "review-blocked") : "risk-gate"
 
     const title = issue.title
     const checkLine = repo.checks.length ? `Checks passed: ${repo.checks.map((c) => `\`${c}\``).join(", ")}.` : "This repo has no automated checks."
@@ -452,9 +535,9 @@ async function main() {
       }
       console.log(`\nRevised pull request: ${revising.url}`)
       record.pullRequest = revising.url
-      await comment(repo.repo, revising.number, `Revised after review by factory worker \`${worker.id}\` (${worker.agent}). ${checkLine}${runUrl ? ` [Factory run](${runUrl}).` : ""}\n\n${description}${gateSection}`)
+      await comment(repo.repo, revising.number, `Revised after review by factory worker \`${worker.id}\` (${worker.agent}). ${checkLine}${runUrl ? ` [Factory run](${runUrl}).` : ""}\n\n${description}${gateSection}${reviewSection}`)
       if (gate?.decision === "needs-attention") {
-        await needsAttention(`The revision was pushed to ${revising.url}, but a risk gate needs a person to decide before it goes further.\n\n${renderGate(gate)}`, "risk-gate")
+        await needsAttention(`The revision was pushed to ${revising.url}, but a gate needs a person to decide before it goes further.\n\n${renderGate(gate)}${reviewSection}`, parkReason)
         return
       }
       await removeLabel(repo.repo, issue.number, labels.running)
@@ -471,18 +554,18 @@ async function main() {
       base: repo.baseBranch,
       title,
       draft: Boolean(gate && gate.decision !== "ready"),
-      body: `Closes #${issue.number}\n\n${description}${planBody}${gateSection}\n\n---\nBuilt by factory worker \`${worker.id}\` (${worker.agent}) in ${box.kind === "docker" ? "a Docker container" : "an Upstash Box"}. ${checkLine}${runUrl ? ` [Factory run](${runUrl}).` : ""}`,
+      body: `Closes #${issue.number}\n\n${description}${planBody}${gateSection}${reviewSection}\n\n---\nBuilt by factory worker \`${worker.id}\` (${worker.agent}) in ${box.kind === "docker" ? "a Docker container" : "an Upstash Box"}. ${checkLine}${runUrl ? ` [Factory run](${runUrl}).` : ""}`,
     })
     console.log(`\nPull request: ${pr.html_url}${pr.draft ? " (draft)" : ""}`)
     record.pullRequest = pr.html_url
 
     if (gate?.decision === "needs-attention") {
-      await needsAttention(`A draft pull request was opened, but a risk gate needs a person to decide before it goes further: ${pr.html_url}\n\n${renderGate(gate)}`, "risk-gate")
+      await needsAttention(`A draft pull request was opened, but a gate needs a person to decide before it goes further: ${pr.html_url}\n\n${renderGate(gate)}${reviewSection}`, parkReason)
       return
     }
     await removeLabel(repo.repo, issue.number, labels.running)
     await addLabels(repo.repo, issue.number, [labels.review])
-    await comment(repo.repo, issue.number, gate?.decision === "draft" ? `Draft pull request opened for review: ${pr.html_url}\n\n${renderGate(gate)}` : `Pull request ready for review: ${pr.html_url}`)
+    await comment(repo.repo, issue.number, gate?.decision === "draft" ? `Draft pull request opened for review: ${pr.html_url}\n\n${renderGate(gate)}${reviewSection}` : `Pull request ready for review: ${pr.html_url}${reviewSection}`)
     endRun(record, "pr-opened")
   } catch (error) {
     endRun(record, "error", "exception")

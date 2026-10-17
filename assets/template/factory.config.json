@@ -57,6 +57,13 @@
           "action": "draft"
         }
       ]
+    },
+    "reviewer": {
+      "enabled": false,
+      "agent": "auto",
+      "blockOn": "critical",
+      "timeoutMinutes": 10,
+      "onError": "needs-attention"
     }
   },
   "worker": {

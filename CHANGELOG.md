@@ -7,6 +7,24 @@ loosely "Keep a Changelog"; versions are git tags (`0.1`, `0.2`, …).
 
 ### Features
 
+- Independent reviewer pass (`factory.reviewer`, off for existing configs;
+  the template ships the block with `"enabled": false` because it adds one
+  agent run to the timeout budget). After checks pass and the change is
+  staged, `src/reviewer.mjs` runs a second, fresh agent session — another
+  agent type of an enabled worker by default (`"agent": "auto"`) — that
+  reviews the staged diff against the issue, the validated plan, the
+  `decisions[]` trace and the precedents used, never the author's reply,
+  and writes a line-based `review.md` of findings by severity. The factory
+  decides from severities alone: findings at or above `blockOn` open a
+  draft PR and park the issue (`review-blocked`); a reviewer that errors,
+  times out, writes an invalid review or edits the repo parks it too
+  (`onError`, `review-error`), and the staged change is snapshotted and
+  restored exactly. The review merges with `riskGates` (strictest wins), is
+  listed in the PR body and issue comment, stored on the run record
+  (`review`, counts only), totalled by `report.mjs`, and counted by
+  `check-setup.mjs` in the timeout sum. `scripts/review-check.mjs`
+  (`npm run review-check`) validates a review file offline. The loader
+  validates every key.
 - Risk-based human gates (`factory.riskGates`, off for existing configs,
   shipped in the template; optional per-repo `tier`). After checks pass,
   `src/gates.mjs` computes ready / draft / needs-attention from touched
