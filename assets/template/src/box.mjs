@@ -3,6 +3,7 @@ import { Box } from "@upstash/box"
 import { getWorkerStates, pickWorker } from "./workers.mjs"
 import { workerProvider } from "./config.mjs"
 import { createDockerWorker, removeDockerWorker } from "./docker.mjs"
+import { createDaytonaWorker, removeDaytonaWorker } from "./daytona.mjs"
 
 const BOX_TIMEOUT_MS = 15 * 60 * 1000
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
@@ -172,6 +173,7 @@ export const browserMissingHelp = (config, agentName) =>
 // attach to it. A job goes on without a browser when this fails.
 export async function startBrowser(box, config) {
   if (box?.kind === "docker") return false // no Upstash Chromium in a container; the agent uses any browser installed in the image
+  if (box?.kind === "daytona") return false // no Upstash Chromium in a Daytona sandbox either; install a browser in the snapshot if the agent needs one
   if (!wantsBrowser(config)) return false
   try {
     await box.browser.tab.create("about:blank")
@@ -244,6 +246,32 @@ export async function claimWorker(config, issueLabels, runId) {
     return null
   }
 
+  // Daytona provider: the same shape as Docker, with a sandbox per job. A
+  // running factory sandbox labelled worker=<id> is the busy marker
+  // (getWorkerStates); the sandbox is deleted again if the agent's settings
+  // cannot be written, so a failed claim never leaves one behind.
+  if (workerProvider(config) === "daytona") {
+    const deadline = Date.now() + (config.factory.waitForWorkerMinutes ?? 30) * 60 * 1000
+    for (let attempt = 0; Date.now() < deadline; attempt++) {
+      const spread = Number(String(runId).replace(/\D/g, "").slice(-6)) + attempt
+      const worker = pickWorker(await getWorkerStates(config), issueLabels, spread, config.agents)
+      if (!worker) {
+        console.log("No free worker. Checking again in 30 seconds.")
+        await sleep(30_000)
+        continue
+      }
+      const box = await createDaytonaWorker(config, worker, runId)
+      try {
+        await applyBoxSettings(box, config, worker.agent)
+      } catch (error) {
+        await removeDaytonaWorker(box)
+        throw error
+      }
+      return { worker, box, runLabel: null, provider: "daytona" }
+    }
+    return null
+  }
+
   const runLabel = runLabelFor(runId)
   const deadline = Date.now() + (config.factory.waitForWorkerMinutes ?? 30) * 60 * 1000
 
@@ -297,6 +325,12 @@ export async function releaseWorker(config, claim) {
   if (claim.provider === "docker" || box?.kind === "docker") {
     await removeDockerWorker(box)
     console.log(`Released worker ${worker.id} and removed its container.`)
+    return
+  }
+  // Daytona: deleting the sandbox is the release, and the cleanup.
+  if (claim.provider === "daytona" || box?.kind === "daytona") {
+    await removeDaytonaWorker(box)
+    console.log(`Released worker ${worker.id} and deleted its Daytona sandbox.`)
     return
   }
   try {

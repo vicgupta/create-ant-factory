@@ -3,6 +3,9 @@
 // token reaches every repo, and whether the Box key works. With the Docker
 // provider it also runs verifyDocker() against the target host: one
 // self-removing `docker run --rm <image> true` smoke container, nothing kept.
+// With the Daytona provider it runs verifyDaytona(): DAYTONA_API_KEY has a
+// value, the key lists sandboxes, and the configured snapshot is active.
+// Read-only: it creates no sandbox.
 //
 // Run with: node --env-file=.env scripts/check-setup.mjs
 import { spawnSync } from "node:child_process"
@@ -10,6 +13,7 @@ import { existsSync, readFileSync } from "node:fs"
 import { Box } from "@upstash/box"
 import { loadConfig, usedAgents, workerProvider, dockerConfig } from "../src/config.mjs"
 import { verifyDocker } from "../src/docker.mjs"
+import { verifyDaytona } from "../src/daytona.mjs"
 import { readSecret } from "../src/agents.mjs"
 import { describeBoxSettings } from "../src/box.mjs"
 
@@ -43,7 +47,7 @@ try {
 if (config) {
   console.log("\nSecrets (values are never shown)")
   const provider = workerProvider(config)
-  const entries = [...(provider === "box" ? [{ secret: "UPSTASH_BOX_API_KEY" }] : []), { secret: "FACTORY_GITHUB_TOKEN" }, ...usedAgents(config).flatMap((name) => config.agents[name].auth ?? []), ...config.repos.flatMap((r) => r.secrets ?? [])]
+  const entries = [...(provider === "box" ? [{ secret: "UPSTASH_BOX_API_KEY" }] : []), ...(provider === "daytona" ? [{ secret: "DAYTONA_API_KEY" }] : []), { secret: "FACTORY_GITHUB_TOKEN" }, ...usedAgents(config).flatMap((name) => config.agents[name].auth ?? []), ...config.repos.flatMap((r) => r.secrets ?? [])]
   for (const entry of entries) {
     const value = readSecret(entry)
     value ? ok(`${entry.secret} is set (${value.length} characters)`) : bad(`${entry.secret} has no value in .env${entry.localFile ? ` or in ${entry.localFile}` : ""}`)
@@ -73,9 +77,23 @@ if (config) {
     note(`limits from config: cpus ${dockerConfig(config).cpus}, memory ${dockerConfig(config).memory}. One container per job, removed when the job ends. Re-run this any time with: node --env-file=.env scripts/verify-docker.mjs`)
   }
 
+  if (provider === "daytona") {
+    // Setup-time verification of the Daytona account the factory will use.
+    // It creates nothing; the first real sandbox is the factory's first job
+    // (or a dry run of src/plan.mjs, which prints the create request).
+    console.log("\nDaytona worker provider (verifying the key, API and snapshot)")
+    const result = await verifyDaytona(config)
+    for (const check of result.checks) {
+      if (check.status === "ok") ok(check.message)
+      else if (check.status === "fail") bad(check.message)
+      else note(check.message)
+    }
+    note("One sandbox per job, deleted when the job ends; an orphaned one stops when idle (worker.daytona.autoStopMinutes) and then deletes itself.")
+  }
+
   console.log("\nUpstash Box")
   if (provider !== "box") {
-    note("skipped: worker.provider is \"docker\", so no Upstash Box is used")
+    note(`skipped: worker.provider is "${provider}", so no Upstash Box is used`)
   } else try {
     const boxes = await Box.list()
     ok(`the Box key works. ${boxes.length} Boxes on the account`)

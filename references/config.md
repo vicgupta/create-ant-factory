@@ -76,12 +76,20 @@ All `setup` commands run as one bash login script, and so do all `checks`. State
 
 | Key | Required | Meaning |
 |---|---|---|
-| `provider` | no | `"docker"` (default; one container per job on your own Docker host) or `"box"` (Upstash Boxes). See `providers.md`. |
+| `provider` | no | `"docker"` (default; one container per job on your own Docker host), `"box"` (Upstash Boxes) or `"daytona"` (one Daytona cloud sandbox per job). See `providers.md`. |
 | `docker.image` | no | Worker image for the Docker provider. Default `create-ant-factory-worker:latest`, built from `worker/Dockerfile`. |
 | `docker.cpus`, `docker.memory` | no | Per-container limits for the Docker provider (`--cpus` / `--memory`). Defaults `"2"` and `"4g"`. |
 | `docker.host` | no | One Docker endpoint (`-H`), for example `"tcp://10.0.1.20:2376"`. Wins over `DOCKER_HOST`. Left out: `DOCKER_HOST` / docker context decides. Verification (`check-setup`, `scripts/verify-docker.mjs`) reports against this target. |
 
 The Docker host itself is not config: the docker CLI's `DOCKER_HOST` environment variable or `docker context` decides where it talks.
+
+| `daytona.snapshot` | no | Daytona snapshot every job sandbox starts from, for example `"create-ant-factory-worker"` (pushed from `worker/Dockerfile`, see `providers.md`). Left out: Daytona's default snapshot, which has no agent CLIs; `check-setup` notes it. |
+| `daytona.target` | no | Daytona target (region), for example `"us"` or `"eu"`. Wins over `DAYTONA_TARGET`. Left out: the organisation's default. |
+| `daytona.apiUrl` | no | Daytona API base URL. Wins over `DAYTONA_API_URL`. Default `https://app.daytona.io/api`; set it for a self-hosted Daytona. |
+| `daytona.autoStopMinutes` | no | Idle minutes before Daytona stops a sandbox (`autoStopInterval`). Default `30`; `0` turns auto-stop off. Sandboxes are created with `autoDeleteInterval: 0`, so one a killed run left behind stops when idle and then deletes itself. |
+| `daytona.startTimeoutMinutes` | no | How long a job waits for its sandbox to reach `started`. Default `5`. |
+
+The Daytona API key is never config: it is `DAYTONA_API_KEY` in `.env` and a repository secret of the same name for Actions (`scripts/set-secrets.mjs` sets it when the provider is `"daytona"`). A key under `worker.daytona` is refused by the loader.
 
 ## workers
 

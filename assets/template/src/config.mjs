@@ -258,10 +258,10 @@ export function loadConfig(file = CONFIG_FILE) {
 
   if (config.worker !== undefined) {
     if (!config.worker || typeof config.worker !== "object" || Array.isArray(config.worker)) {
-      errors.push('"worker" must be an object like { "provider": "docker", "docker": { ... } } or { "provider": "box" }')
+      errors.push('"worker" must be an object like { "provider": "docker", "docker": { ... } }, { "provider": "daytona", "daytona": { ... } } or { "provider": "box" }')
     } else {
       const provider = config.worker.provider ?? "box"
-      if (!["box", "docker"].includes(provider)) errors.push(`worker.provider "${provider}" must be "docker" (the default) or "box"`)
+      if (!WORKER_PROVIDERS.includes(provider)) errors.push(`worker.provider "${provider}" must be "docker" (the default), "box" or "daytona"`)
       if (provider === "docker" || config.worker.docker !== undefined) {
         const docker = dockerConfig(config)
         if (!docker.image) errors.push("worker.docker.image must name the worker image to run")
@@ -269,6 +269,10 @@ export function loadConfig(file = CONFIG_FILE) {
         if (!/^[0-9]+(\.[0-9]+)?[bkmg]?$/i.test(docker.memory)) errors.push(`worker.docker.memory "${docker.memory}" must look like "4g", "512m" or a byte count`)
         if (docker.host !== null && (typeof docker.host !== "string" || !docker.host || /\s/.test(docker.host))) errors.push('worker.docker.host must be one Docker endpoint with no spaces (for example "tcp://10.0.1.20:2376"), or left out to use DOCKER_HOST / docker context')
       }
+      // Daytona: one cloud sandbox per job (src/daytona.mjs). Only names and
+      // numbers live here; the API key is DAYTONA_API_KEY in the environment
+      // and never belongs in this file.
+      if (provider === "daytona" || config.worker.daytona !== undefined) errors.push(...daytonaConfigErrors(config.worker.daytona))
     }
   }
 
@@ -301,6 +305,44 @@ export function isValidBranchPrefix(prefix) {
   return true
 }
 
+export const WORKER_PROVIDERS = ["box", "docker", "daytona"]
+
+// Pure: what is wrong with a worker.daytona block (an empty list when it is
+// fine or left out). Exported for the tests.
+export function daytonaConfigErrors(daytona) {
+  if (daytona === undefined) return []
+  if (!daytona || typeof daytona !== "object" || Array.isArray(daytona)) return ['worker.daytona must be an object like { "snapshot": "create-ant-factory-worker" }']
+  const errors = []
+  const name = (key, example) => {
+    const value = daytona[key]
+    if (value !== undefined && (typeof value !== "string" || !value.trim() || /\s/.test(value))) errors.push(`worker.daytona.${key} must be a non-empty name with no spaces (for example ${JSON.stringify(example)}), or left out`)
+  }
+  name("snapshot", "create-ant-factory-worker")
+  name("target", "us")
+  if (daytona.apiUrl !== undefined && (typeof daytona.apiUrl !== "string" || !/^https?:\/\/[^\s]+$/.test(daytona.apiUrl))) errors.push('worker.daytona.apiUrl must be an http(s) URL such as "https://app.daytona.io/api", or left out to use DAYTONA_API_URL / the Daytona cloud')
+  if (daytona.autoStopMinutes !== undefined && (!Number.isInteger(daytona.autoStopMinutes) || daytona.autoStopMinutes < 0)) errors.push("worker.daytona.autoStopMinutes must be a whole number of minutes (0 turns auto-stop off)")
+  if (daytona.startTimeoutMinutes !== undefined && (typeof daytona.startTimeoutMinutes !== "number" || !Number.isFinite(daytona.startTimeoutMinutes) || daytona.startTimeoutMinutes <= 0)) errors.push("worker.daytona.startTimeoutMinutes must be a positive number of minutes")
+  for (const key of ["apiKey", "key", "token"]) if (daytona[key] !== undefined) errors.push(`worker.daytona.${key} must not be in factory.config.json: put the key in DAYTONA_API_KEY (.env locally, a repository secret in Actions)`)
+  return errors
+}
+
+export const DAYTONA_DEFAULTS = { apiUrl: "https://app.daytona.io/api", autoStopMinutes: 30, startTimeoutMinutes: 5 }
+
+// Daytona settings with defaults filled in. The config wins over the
+// environment for apiUrl and target (like worker.docker.host over
+// DOCKER_HOST); an empty environment value counts as unset, because the
+// workflow passes unset repository variables through as "".
+export function daytonaConfig(config, env = process.env) {
+  const daytona = config.worker?.daytona ?? {}
+  return {
+    snapshot: daytona.snapshot ?? null,
+    target: daytona.target ?? (env.DAYTONA_TARGET || null),
+    apiUrl: String(daytona.apiUrl ?? (env.DAYTONA_API_URL || DAYTONA_DEFAULTS.apiUrl)).replace(/\/+$/, ""),
+    autoStopMinutes: daytona.autoStopMinutes ?? DAYTONA_DEFAULTS.autoStopMinutes,
+    startTimeoutMinutes: daytona.startTimeoutMinutes ?? DAYTONA_DEFAULTS.startTimeoutMinutes,
+  }
+}
+
 // Which worker provider runs jobs. The template ships "docker". The "box"
 // fallback stays so factories created before the Docker default (with no
 // "worker" section at all) keep behaving exactly as before.
@@ -310,10 +352,13 @@ export function workerProvider(config) {
 
 // What a worker's unit of execution is called in user-facing text: "Box" for
 // the Upstash provider, "Container" for the Docker provider (one container is
-// created per job and removed when the job ends). Capitalised, for the start
-// of a column. Kept in one place so status.mjs and plan.mjs cannot disagree.
+// created per job and removed when the job ends), "Sandbox" for the Daytona
+// provider (one sandbox per job, deleted when the job ends). Capitalised, for
+// the start of a column. Kept in one place so status.mjs and plan.mjs cannot
+// disagree.
 export function workerNoun(config) {
-  return workerProvider(config) === "docker" ? "Container" : "Box"
+  const provider = workerProvider(config)
+  return provider === "docker" ? "Container" : provider === "daytona" ? "Sandbox" : "Box"
 }
 
 // Box-only scripts (provision-workers, delete-workers, smoke-test,
@@ -326,8 +371,19 @@ export function workerNoun(config) {
 // this first and refuse with the Docker equivalent instead of doing the wrong
 // thing quietly. Old factories with no "worker" section keep the "box"
 // fallback in workerProvider, so they are unaffected.
+//
+// The Daytona provider has no Boxes either (one sandbox per job, deleted when
+// the job ends), so it is refused the same way, pointing at check-setup,
+// which verifies the Daytona key, API and snapshot.
 export function requireBoxProvider(config, scriptName) {
-  if (workerProvider(config) === "box") return
+  const provider = workerProvider(config)
+  if (provider === "box") return
+  if (provider === "daytona") {
+    throw new Error(
+      `worker.provider is "daytona", so ${scriptName} has nothing to do: it manages Upstash Boxes, and this factory has none. ` +
+        `A Daytona factory creates one sandbox per job and deletes it when the job ends; verify the Daytona key, API and snapshot with "node --env-file=.env scripts/check-setup.mjs" instead.`,
+    )
+  }
   throw new Error(
     `worker.provider is "docker", so ${scriptName} has nothing to do: it manages Upstash Boxes, and this factory has none. ` +
       `A Docker factory creates one container per job and removes it when the job ends; verify the Docker target with "node scripts/verify-docker.mjs" instead.`,

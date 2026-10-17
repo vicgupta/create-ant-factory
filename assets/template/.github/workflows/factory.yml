@@ -37,6 +37,12 @@ jobs:
       FACTORY_REPO: ${{ github.event.client_payload.repo || inputs.repo }}
       FACTORY_ISSUE: ${{ github.event.client_payload.issue || inputs.issue }}
       UPSTASH_BOX_API_KEY: ${{ secrets.UPSTASH_BOX_API_KEY }}
+      # Only used when worker.provider is "daytona". The key is a secret; the
+      # optional API URL (self-hosted Daytona) and target region are plain
+      # repository variables and may stay unset.
+      DAYTONA_API_KEY: ${{ secrets.DAYTONA_API_KEY }}
+      DAYTONA_API_URL: ${{ vars.DAYTONA_API_URL }}
+      DAYTONA_TARGET: ${{ vars.DAYTONA_TARGET }}
       FACTORY_GITHUB_TOKEN: ${{ secrets.FACTORY_GITHUB_TOKEN }}
       # Every secret as one JSON blob. The agents' sign-in secrets are read from
       # it by name, so adding an agent never means editing this file.

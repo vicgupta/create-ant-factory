@@ -23,6 +23,8 @@ export function collectSecrets(config, { agentName, repo } = {}) {
     if (typeof value === "string" && value.length >= MIN_SECRET_LENGTH) values.add(value)
   }
   add(process.env.FACTORY_GITHUB_TOKEN)
+  // Never sent into a sandbox, but an API error could still echo it.
+  add(process.env.DAYTONA_API_KEY)
   try {
     for (const value of Object.values(JSON.parse(process.env.FACTORY_SECRETS_JSON ?? "{}"))) add(value)
   } catch {

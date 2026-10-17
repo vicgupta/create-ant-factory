@@ -7,6 +7,26 @@ loosely "Keep a Changelog"; versions are git tags (`0.1`, `0.2`, …).
 
 ### Features
 
+- Daytona worker provider (`"worker": { "provider": "daytona" }`, opt-in;
+  Box and Docker behave exactly as before). `src/daytona.mjs` creates one
+  Daytona sandbox per job through Daytona's public REST API (create, wait
+  for `started`, toolbox `process/execute` and `files/upload-v2`, delete),
+  behind the same `exec.command()` / `files.write()` handle Box and Docker
+  use, so `run.mjs`, `agents.mjs`, `sh()` and `runScript()` are unchanged.
+  Settings live under `worker.daytona` (`snapshot`, `target`, `apiUrl`,
+  `autoStopMinutes`, `startTimeoutMinutes`), validated by the loader; the
+  key is `DAYTONA_API_KEY` only (a key in the config is refused), with
+  optional `DAYTONA_API_URL` / `DAYTONA_TARGET`. A failed start deletes the
+  sandbox; sandboxes are created `public: false` with
+  `autoDeleteInterval: 0`, so an orphan stops when idle and deletes itself.
+  `check-setup.mjs` requires the key and verifies it, the API and the
+  snapshot (read-only); `plan.mjs` prints the create request;
+  `set-secrets.mjs` and the workflow pass the key through;
+  `release-worker.mjs` deletes a worker's leftover sandboxes; run records
+  carry `provider: "daytona"`; the Box-only scripts refuse under Daytona.
+  The HTTP layer takes an injectable `fetch`, and `tests/daytona.test.mjs`
+  pins every request shape without a Daytona account.
+
 - Scheduled scan template (`factory.scheduledScan`, off for existing configs;
   the template ships the block with `"enabled": false`). An optional
   `.github/workflows/scheduled-scan.yml` runs on a weekly cron (and

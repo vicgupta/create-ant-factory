@@ -31,7 +31,7 @@ See `.env.example`. The user creates each one and puts values in a local `.env` 
 1. `FACTORY_GITHUB_TOKEN` — fine-grained token covering the factory repo and every app repo (Contents, Pull requests, Issues: read + write).
 2. `CLAUDE_CODE_OAUTH_TOKEN` — from `claude setup-token` (subscription) or `ANTHROPIC_API_KEY`. Other agents (e.g. Codex) use their own secret per `references/agents.md`.
 
-A third token, `UPSTASH_BOX_API_KEY` (Upstash console, Box section), is only needed when `worker.provider` is `"box"`. See `references/providers.md` for choosing.
+A third token, `UPSTASH_BOX_API_KEY` (Upstash console, Box section), is only needed when `worker.provider` is `"box"`; likewise `DAYTONA_API_KEY` (Daytona dashboard) only when it is `"daytona"` (one Daytona cloud sandbox per job). See `references/providers.md` for choosing.
 
 `node --env-file=.env scripts/check-setup.mjs` verifies setup without printing values.
 

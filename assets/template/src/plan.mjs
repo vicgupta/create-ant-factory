@@ -1,5 +1,5 @@
 // Dry run. Reads the incoming issue, checks it against the config, and prints
-// which worker would take it. It changes nothing on GitHub or Upstash.
+// which worker would take it. It changes nothing on GitHub, Upstash, Docker or Daytona.
 //
 // Run with: node --env-file=.env src/plan.mjs owner/app-repo 12
 import { loadConfig, findRepo } from "./config.mjs"
@@ -7,6 +7,7 @@ import { getIssue } from "./github.mjs"
 import { getWorkerStates, pickWorker } from "./workers.mjs"
 import { workerProvider, workerNoun } from "./config.mjs"
 import { createDockerWorker } from "./docker.mjs"
+import { createDaytonaWorker } from "./daytona.mjs"
 import { resumeEnabled, findFactoryPullRequest } from "./review.mjs"
 import { planFirstEnabled } from "./plan-first.mjs"
 import { contextGraphEnabled } from "./context.mjs"
@@ -59,6 +60,12 @@ async function main() {
     const { runCommand } = await createDockerWorker(config, worker, "plan", { dryRun: true })
     console.log(`\nPlan: worker ${worker.id} (${worker.agent}) would take this issue in a new Docker container.`)
     console.log(`Would run: ${runCommand}`)
+  } else if (workerProvider(config) === "daytona") {
+    // Dry-run in the literal sense: print the exact create request (it holds
+    // no secret), call nothing.
+    const { request } = await createDaytonaWorker(config, worker, "plan", { dryRun: true })
+    console.log(`\nPlan: worker ${worker.id} (${worker.agent}) would take this issue in a new Daytona sandbox.`)
+    console.log(`Would call: ${request.method} ${request.url} ${JSON.stringify(request.body)}`)
   } else {
     console.log(`\nPlan: worker ${worker.id} (${worker.agent}) would take this issue in Box ${worker.boxName}.`)
   }
