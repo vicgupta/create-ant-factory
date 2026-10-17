@@ -6,6 +6,13 @@ import { pathToFileURL } from "node:url"
 const CONFIG_FILE = new URL("../factory.config.json", import.meta.url)
 const MAX_LABEL_LENGTH = 20 // Upstash Box label limit
 
+// Agent env keys and secret "env" names are written as `export NAME='value'`
+// lines into files the job sources in bash. A name that is not a shell
+// identifier ("MY-VAR", "API KEY", "1TOKEN") makes that `source` fail inside
+// the Box, so the job dies far from the config. Reject it here instead.
+const ENV_NAME = /^[A-Za-z_][A-Za-z0-9_]*$/
+export const isEnvName = (name) => typeof name === "string" && ENV_NAME.test(name)
+
 export function loadConfig(file = CONFIG_FILE) {
   const config = JSON.parse(readFileSync(file, "utf8"))
   // Paths in the config (jobFiles, setup scripts) are relative to the config file.
@@ -127,8 +134,12 @@ export function loadConfig(file = CONFIG_FILE) {
       if (!file.from || !file.to?.startsWith("/")) errors.push(`agent "${name}": each jobFiles entry needs "from" (a path in this repo) and "to" (an absolute path in the Box)`)
       else if (!existsSync(new URL(file.from, config.baseUrl))) errors.push(`agent "${name}": jobFiles source "${file.from}" does not exist in this repo`)
     }
+    for (const key of Object.keys(agent.env ?? {})) {
+      if (!isEnvName(key)) errors.push(`agent "${name}": env name "${key}" must be a shell variable name (letters, digits and "_", not starting with a digit)`)
+    }
     for (const entry of agent.auth ?? []) {
       if (!entry.secret || (!entry.env && !entry.file)) errors.push(`agent "${name}": each auth entry needs a secret and an env or a file`)
+      else if (entry.env && !isEnvName(entry.env)) errors.push(`agent "${name}": auth env "${entry.env}" must be a shell variable name (letters, digits and "_", not starting with a digit)`)
     }
   }
 
@@ -143,6 +154,7 @@ export function loadConfig(file = CONFIG_FILE) {
     repo.exclude ??= []
     for (const entry of repo.secrets ?? []) {
       if (!entry.secret || !entry.env) errors.push(`repo "${repo.repo}": each secrets entry needs a secret (its name in .env and GitHub) and an env (the variable the repo expects)`)
+      else if (!isEnvName(entry.env)) errors.push(`repo "${repo.repo}": secrets env "${entry.env}" must be a shell variable name (letters, digits and "_", not starting with a digit)`)
     }
   }
 
