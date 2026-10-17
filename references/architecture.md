@@ -40,6 +40,7 @@ The GitHub runner does the orchestration and holds the secrets. The worker sandb
    **Resume-from-review** (`factory.resumeFromReview: true`, `src/review.mjs`): when the branch already has an open PR, the run revises it instead. Step 4 clones that branch rather than the base; the prompt says to revise the earlier attempt and adds the trusted review feedback (reviews, inline comments with file and line, PR conversation, from `allowedActors` and the issue author only, and only what came after the factory's last "Revised after review" reply) and the failing check runs on the PR's head commit, capped to the newest 8000 characters. Step 7 becomes a normal push (no `--force`) of an "Address review feedback" commit; a rejected push hands the issue back instead of overwriting anyone's commits. The factory then replies on the PR with the agent's summary, and step 8 runs as usual. No feedback and no failing checks means needs attention: there is nothing to revise.
 8. On the issue: remove `factory:running`, add `factory:review`, comment with the PR link.
 9. Always, in `finally`: delete the sign-in files and release the worker — with Box, remove the busy label and pause the Box; with Docker, remove the container.
+10. Always, last: write the run record (`src/record.mjs`, unless `factory.runRecords` is `false`) to `runs/run-<id>.json` and the job summary. The workflow's `if: always()` step uploads it as an artifact, so failed and timed-out runs are counted too. `scripts/report.mjs` turns downloaded records into a report.
 
 The agent is told not to commit, push, touch git settings or edit `.github/`. The factory does the git work so that the token is never available to the agent, and before it commits it refuses any change under `.github/` (`src/changes.mjs`): the issue gets the needs-attention label and nothing is pushed, because a workflow pushed with the factory token would run with the app repo's secrets.
 
@@ -80,6 +81,7 @@ src/agents.mjs               secrets, sign-in files, jobFiles and the agent run
 src/github.mjs               issues, labels, comments, pull requests
 src/plan.mjs                 dry run: what would happen for this issue
 src/run.mjs                  the job, start to pull request
+src/record.mjs               run records and the report math (pass rate, time to PR, rework)
 scripts/check-setup.mjs      tools, config, secrets, token reach, provider checks (Box key / Docker host). Read-only
 scripts/smoke-test.mjs       one worker, one agent, "BOX OK"
 scripts/install-trigger.mjs  labels and trigger PRs in the app repos
@@ -88,6 +90,7 @@ scripts/provision-workers.mjs  create missing workers (Box: paused Boxes; Docker
 scripts/build-snapshot.mjs   build a worker image (per agent type, or --shared)
 scripts/apply-box-settings.mjs  write changed model and effort settings into existing Boxes
 scripts/status.mjs           who is free, who is busy
+scripts/report.mjs           markdown or JSON report from downloaded run records
 scripts/release-worker.mjs   free a stuck worker
 scripts/delete-workers.mjs   delete worker Boxes, Box provider (user runs this)
 scripts/box-exec.mjs         run one command in a worker's Box (Box provider)

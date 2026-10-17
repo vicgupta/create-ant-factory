@@ -14,6 +14,7 @@
     ],
     "browser": true,
     "resumeFromReview": true,
+    "runRecords": true,
     "waitForWorkerMinutes": 20,
     "agentTimeoutMinutes": 25,
     "commandTimeoutMinutes": 15

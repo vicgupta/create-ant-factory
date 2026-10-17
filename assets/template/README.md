@@ -45,6 +45,22 @@ itself; you only ever add `ready` (and optionally `agent:<name>`).
 
 ## Everyday commands
 
+How the factory is doing: every run leaves a small run record (worker,
+provider, agent, minutes, check attempts, files changed, outcome) as a
+`run-record-*` artifact and in the run's job summary. Pull them down and
+report on them:
+
+```bash
+gh run download --pattern 'run-record-*' --dir runs
+node scripts/report.mjs runs
+```
+
+The report gives the pass rate, the median time to a pull request and the
+rework (revisions after review, runs that needed a second check attempt),
+overall and per agent type and provider. Add `--json` for the numbers or
+`--out report.md` to save it. Set `"runRecords": false` under `factory` to
+turn records off.
+
 ```bash
 node --env-file=.env scripts/status.mjs
 ```

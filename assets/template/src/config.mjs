@@ -105,6 +105,12 @@ export function loadConfig(file = CONFIG_FILE) {
     errors.push("factory.resumeFromReview must be true or false. With true, re-labelling an issue with an open factory pull request revises that pull request from its review feedback")
   }
 
+  // Left out means true. Each run writes runs/run-<id>.json (src/record.mjs),
+  // which the workflow uploads and scripts/report.mjs aggregates.
+  if (config.factory.runRecords !== undefined && typeof config.factory.runRecords !== "boolean") {
+    errors.push("factory.runRecords must be true or false. With true (the default), every run writes a small run record that scripts/report.mjs turns into a report")
+  }
+
   // Every pull request goes to branchPrefix + the issue number. Without the
   // prefix the branch would be "undefined12", a failure that shows up far
   // from this file, so require it here. It also has to survive

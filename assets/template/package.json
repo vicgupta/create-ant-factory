@@ -11,6 +11,7 @@
     "status": "node --env-file=.env scripts/status.mjs",
     "plan": "node --env-file=.env src/plan.mjs",
     "test": "node --test tests/*.test.mjs",
+    "report": "node scripts/report.mjs",
     "verify-docker": "node --env-file=.env scripts/verify-docker.mjs"
   },
   "dependencies": {
