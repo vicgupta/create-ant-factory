@@ -10,7 +10,7 @@ import { loadConfig } from "../src/config.mjs"
 const baseConfig = () => ({
   factory: {
     repo: "me/factory", boxNamePrefix: "factory-", boxLabel: "factory", busyLabel: "busy",
-    gitAuthor: { name: "Me", email: "123+me@users.noreply.github.com" },
+    branchPrefix: "factory/issue-", gitAuthor: { name: "Me", email: "123+me@users.noreply.github.com" },
     allowedActors: ["me"],
   },
   labels: { ready: "ready", running: "factory:running", review: "factory:review", needsAttention: "factory:needs-attention" },
@@ -52,4 +52,13 @@ test("labels are compared case-insensitively for duplicates", () => {
   const config = baseConfig()
   config.labels.review = "READY"
   assert.throws(() => load(config), /used for another label too/)
+})
+
+test("a label name with a single quote is rejected", () => {
+  // install-trigger.mjs writes labels.ready into a single-quoted GitHub
+  // Actions expression. A quote would end that string early and generate an
+  // invalid trigger workflow, so the config is refused up front.
+  const config = baseConfig()
+  config.labels.ready = "don't ship"
+  assert.throws(() => load(config), /labels\.ready must not contain a single quote/)
 })

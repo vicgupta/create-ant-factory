@@ -12,7 +12,7 @@ Every key, what it does, and whether it is required. `src/config.mjs` validates 
 | `busyLabel` | yes | Label a Box carries while it works on an issue. |
 | `branchPrefix` | yes | Branches are `<prefix><issue number>`, for example `factory/issue-12`. Must be a non-empty string that forms a legal git branch name once the issue number is appended (no spaces or any of `~ ^ : ? * [ \`, no `..`, no `@{`), or the loader refuses the config. |
 | `gitAuthor.name`, `gitAuthor.email` | yes | Author of the factory's commits. The address of a real person on the team, or preview hosts block the deployment. |
-| `allowedActors` | yes | GitHub usernames that may start the factory, by label or by the "Run workflow" button. |
+| `allowedActors` | yes | GitHub usernames that may start the factory, by label or by the "Run workflow" button. Each must look like a GitHub username (letters, digits, hyphens); the loader refuses anything else, because the names go into the generated trigger workflow and a typo'd one would otherwise silently match nobody. |
 | `boxLimit` | no | The Upstash plan's Box limit. With it, `check-setup.mjs` works out whether the workers fit next to whatever else is on the account. |
 | `browser` | no | Browser access for every Box the factory creates: a Chromium that Upstash runs, reachable as `box.browser` and shown in the Upstash console. Default `true`. It is fixed when a Box is created, and a Box made from a worker image gets whatever the Box the image was built in had. So changing it later means deleting the workers and rebuilding the image. See `upstash-box.md`. |
 | `runtime` | no | Upstash Box runtime. Default `node`. Check the Box docs for other values, and re-run the smoke test if you change it, because other runtimes may not ship the agent CLIs. |
@@ -28,7 +28,7 @@ Keep the workflow's `timeout-minutes` (150 in the template) above the worst case
 
 ## labels
 
-`ready`, `running`, `review`, `needsAttention`: the issue label names. All required. `install-trigger.mjs` creates them in each app repo.
+`ready`, `running`, `review`, `needsAttention`: the issue label names. All required. `install-trigger.mjs` creates them in each app repo. None may contain a single quote: the ready label is written into a single-quoted workflow expression, and a quote would generate an invalid trigger workflow.
 
 ## agents
 

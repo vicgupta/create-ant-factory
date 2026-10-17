@@ -33,6 +33,13 @@ export function loadConfig(file = CONFIG_FILE) {
     const name = config.labels[key]
     if (typeof name !== "string" || !name.trim()) {
       errors.push(`labels.${key} must be the name of the GitHub issue label (a non-empty string)`)
+    } else if (name.includes("'")) {
+      // install-trigger.mjs writes labels.ready into a single-quoted GitHub
+      // Actions expression (github.event.label.name == '...'). A quote ends
+      // that string early, GitHub rejects the whole workflow file, and the
+      // trigger stops working with no visible error. One rule for all four
+      // names, so a later template change cannot reintroduce it elsewhere.
+      errors.push(`labels.${key} must not contain a single quote: it would generate an invalid trigger workflow`)
     }
   }
   const labelNames = new Set()
@@ -63,6 +70,19 @@ export function loadConfig(file = CONFIG_FILE) {
 
   if (!Array.isArray(config.factory.allowedActors) || config.factory.allowedActors.length === 0 || config.factory.allowedActors.includes("OWNER")) {
     errors.push("factory.allowedActors needs the real GitHub usernames that may start the factory")
+  }
+  // install-trigger.mjs puts these names inside fromJSON('...') in the
+  // trigger workflow, so a quote would generate an invalid file the same way
+  // as in a label name. A typo'd name (a space, an @-prefix) is quieter and
+  // worse: it loads fine, and then the actor guard never matches anyone, so
+  // every manual "Run workflow" run is refused without saying why. Looser
+  // than GitHub's full signup rules on purpose: letters, digits, hyphens.
+  if (Array.isArray(config.factory.allowedActors)) {
+    for (const actor of config.factory.allowedActors) {
+      if (typeof actor !== "string" || !/^[A-Za-z0-9-]+$/.test(actor)) {
+        errors.push(`factory.allowedActors has ${JSON.stringify(actor)}, which is not a GitHub username (letters, digits and hyphens)`)
+      }
+    }
   }
 
   // Left out means true. Browser access is fixed when a Box is created, so the

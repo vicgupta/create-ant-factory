@@ -75,6 +75,13 @@ for (const key of ["waitForWorkerMinutes", "agentTimeoutMinutes", "commandTimeou
   })
 }
 
+test("allowedActors entries must look like GitHub usernames", () => {
+  load({ allowedActors: ["vicgupta", "octo-org"] }) // letters, digits and hyphens are fine
+  for (const bad of ["vic gupta", "@vicgupta", "vic'gupta", "vic_gupta", "", 42]) {
+    assert.throws(() => load({ allowedActors: ["vicgupta", bad] }), /factory\.allowedActors has .* which is not a GitHub username/, JSON.stringify(bad))
+  }
+})
+
 test("a missing boxNamePrefix is rejected", () => {
   assert.throws(() => load({ boxNamePrefix: undefined }), /factory\.boxNamePrefix must be a non-empty name/)
 })
