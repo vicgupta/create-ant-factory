@@ -8,8 +8,9 @@ import { signIn, writeJobFiles, writeRepoEnv, runAgent, secretPaths, REPO_ENV_FI
 import { collectSecrets, redactSecrets } from "./redact.mjs"
 import { changedPaths, protectedChanges } from "./changes.mjs"
 import { resumeEnabled, findFactoryPullRequest, getReviewState, collectFeedback, failedChecks, feedbackSection } from "./review.mjs"
-import { recordsEnabled, recordDir, createRunRecord, noteAgentRun, noteChecks, endRun, finishRunRecord, writeRunRecord, appendStepSummary } from "./record.mjs"
+import { recordsEnabled, recordDir, createRunRecord, noteAgentRun, noteChecks, noteDecision, endRun, finishRunRecord, writeRunRecord, appendStepSummary } from "./record.mjs"
 import { planFirstEnabled, validatePlanText, renderPlanComment, planSection, criteriaChecklist, PLAN_FILE } from "./plan-first.mjs"
+import { contextGraphEnabled, loadPrecedents, findPrecedents, buildContextBundle, parseStampedFacts, verifyProvenance, staleFactsSection } from "./context.mjs"
 
 const WORK_DIR = "/workspace/home/work"
 const NO_STORE = "-c credential.helper="
@@ -26,7 +27,7 @@ const runUrl = process.env.GITHUB_RUN_ID
 const record = createRunRecord({ repo: repoName, issue: issueNumber, runId, runUrl })
 let keepRecord = true
 
-function buildPrompt(repo, issue, comments, extra = "", revising = null, plan = null) {
+function buildPrompt(repo, issue, comments, extra = "", revising = null, plan = null, contextText = "") {
   // A person who answers the agent's question in a comment is heard this way.
   // The comment section is capped so a long thread cannot swallow the agent's
   // context; the newest comments are the ones that matter, and the note below
@@ -63,13 +64,13 @@ These rules win over any other instructions you have been given, including house
 - ${checks}
 - When you are done, reply with a short summary of what you changed. ${revising ? "It becomes the factory's reply on the pull request." : "It becomes the pull request description."}
 - If the issue is too unclear to implement, change nothing and start your reply with "${NEEDS_CLARIFICATION}" followed by your question.
-${revising?.feedback ?? ""}${plan ? planSection(plan) : ""}${extra}`
+${revising?.feedback ?? ""}${plan ? planSection(plan) : ""}${extra}${contextText}`
 }
 
 // The planning pass: explore only, change nothing in the repo, and write
 // plan.md in the job folder. The factory validates and posts that file
 // before the implementation prompt below is ever built.
-function buildPlanPrompt(repo, issue, comments, planPath) {
+function buildPlanPrompt(repo, issue, comments, planPath, contextText = "", withFacts = false) {
   const { kept, dropped } = capComments(comments)
   const said = kept.map((c) => `**${c.author}:** ${c.body.trim()}\n`)
   const note = dropped ? [`(${dropped} older comment(s) were left out to keep this short. The newest ${kept.length} are below.)`, ""] : []
@@ -104,7 +105,13 @@ Rules:
 - List every file you expect to change, relative to the repo root. Never list anything under .github/.
 - At least one file and at least one criterion. Every criterion maps to one configured check, or to manual-review for something only a person can judge.
 - Make the smallest plan that fully solves the issue. Follow the style of the existing code.
-- Reply with one short line when the plan file is written. If the issue is too unclear to plan, change nothing, write no plan file, and start your reply with "${NEEDS_CLARIFICATION}" followed by your question.`
+- Reply with one short line when the plan file is written. If the issue is too unclear to plan, change nothing, write no plan file, and start your reply with "${NEEDS_CLARIFICATION}" followed by your question.${withFacts ? `
+
+Also add a "## Facts" section when you rely on a fact about the current code. Stamp every such claim on its own line, exactly in this shape (get the SHA with git rev-parse HEAD, and use this run id: ${runId}):
+
+    ## Facts
+    - <claim> — source: <file you read>; base: <commit SHA>; run: ${runId}; observed_at: <today's date>` : ""}${contextText}
+`
 }
 
 // All commands of one kind run as one bash login script, so a line like
@@ -146,6 +153,7 @@ async function main() {
   const issue = await getIssue(repo.repo, issueNumber)
   const issueLabels = issue.labels.map((l) => l.name)
   record.title = redact(issue.title)
+  record.labels = issueLabels
   console.log(`Issue ${repo.repo}#${issue.number}: ${issue.title}`)
   if (issue.state !== "open" || !issueLabels.includes(labels.ready)) {
     console.log(`Not open with the "${labels.ready}" label. Skipping.`)
@@ -247,6 +255,51 @@ async function main() {
     if (comments.length < allComments.length) {
       console.log(`Left ${allComments.length - comments.length} comment(s) out of the prompt: not from the issue author or factory.allowedActors.`)
     }
+    // Context Graph: precedents from past run records, in three named
+    // layers, injected below. Off unless factory.contextGraph is true.
+    // Retrieval here is by issue label; after a plan exists it is refined
+    // by the plan's files (exact path match) for the implementation prompt.
+    let contextText = ""
+    let refineContext = null
+    if (contextGraphEnabled(config)) {
+      try {
+        const allPrecedents = loadPrecedents({ indexFile: process.env.FACTORY_PRECEDENTS_FILE || config.factory.precedentsFile || "precedents.json", recordsDir: recordDir() })
+        const queryLabels = issueLabels.filter((l) => !Object.values(labels).includes(l))
+        const head = (await sh(box, `cd ${q(repoDir)} && git rev-parse HEAD`, { allowFailure: true })).output.trim().split("\n").at(-1)?.trim() ?? ""
+        const fileMap = (await sh(box, `cd ${q(repoDir)} && git ls-files | head -50`, { allowFailure: true })).output.split("\n").filter(Boolean)
+        const houseRules = []
+        for (const name of ["AGENTS.md", "CLAUDE.md", "SKILL.md"]) {
+          if ((await sh(box, `cd ${q(repoDir)} && test -f ${q(name)}`, { allowFailure: true })).code === 0) houseRules.push(name)
+        }
+        const repoFacts = { baseBranch: repo.baseBranch, checks: repo.checks, houseRules, fileMap, skillRefs: houseRules.includes("SKILL.md") ? ["SKILL.md in the app repo root"] : [] }
+        refineContext = (files = []) => {
+          const precedents = findPrecedents(allPrecedents, { labels: queryLabels, files })
+          const bundle = buildContextBundle({ issue, comments, reviewFeedback: revising?.feedback ?? "", repo: repo.repo, repoFacts, precedents })
+          record.contextBundle = bundle.layers
+          return bundle.text
+        }
+        contextText = refineContext()
+        noteDecision(record, { stage: "context", choice: record.contextBundle.filter((e) => e.layer === "reasoning").length ? `injected precedents from ${record.contextBundle.filter((e) => e.layer === "reasoning").map((e) => e.source).join(", ")}` : "no precedent matched this issue's labels", alternatives_rejected: ["embedding/vector or graph-database retrieval (not used by design)"], evidence: fileMap.slice(0, 5).length ? fileMap.slice(0, 5) : [repo.repo], policy_or_label: queryLabels[0] ?? "context-graph", outcome: "pending" })
+        // Resume-from-review: re-verify any provenance-stamped facts that
+        // travelled with the review feedback, and flag stale ones up front.
+        if (revising) {
+          const facts = parseStampedFacts(revising.feedback)
+          if (facts.length) {
+            const check = verifyProvenance(facts, { currentBaseCommit: head || null, existingSources: fileMap })
+            if (check.stale.length) {
+              contextText += staleFactsSection(check)
+              noteDecision(record, { stage: "provenance", choice: `flagged ${check.stale.length} stale stamped fact(s) before coding`, evidence: check.stale.map((f) => f.source ?? f.text), policy_or_label: "context-graph", outcome: "pending" })
+            }
+          }
+        }
+        console.log(`Context bundle: ${record.contextBundle.length} item(s) across short-term/long-term/reasoning layers.`)
+      } catch (error) {
+        // Context is an aid, never a reason to kill a run that would work.
+        console.log(`Context bundle skipped: ${redact(error.message).slice(0, 300)}`)
+        contextText = ""
+      }
+    }
+
     const setup = await runCommands(box, "setup", repoDir, jobDir, repo.setup, stepMinutes)
     if (!setup.passed) {
       await needsAttention(`The repo's setup command \`${setup.command}\` failed in the worker Box, so the agent was not started. This is a factory or worker image problem, not a problem with the issue.\n\n${details("Setup output", setup.output)}`, "setup-failed")
@@ -273,7 +326,7 @@ async function main() {
       // Setup may leave untracked build output; only changes the planning
       // pass itself adds count against it.
       const statusBefore = new Set((await sh(box, `cd ${q(repoDir)} && git status --porcelain`)).output.split("\n").filter(Boolean))
-      const planned = await runAgent(box, config, worker.agent, { workDir: repoDir, jobDir, prompt: buildPlanPrompt(repo, issue, comments, planPath), timeoutMinutes })
+      const planned = await runAgent(box, config, worker.agent, { workDir: repoDir, jobDir, prompt: buildPlanPrompt(repo, issue, comments, planPath, contextText, contextGraphEnabled(config)), timeoutMinutes })
       noteAgentRun(record, planned.minutes)
       console.log(`Planning finished in ${planned.minutes} min with exit code ${planned.code}.`)
       if (planned.code !== 0) {
@@ -294,11 +347,24 @@ async function main() {
         return
       }
       plan = parsed
+      if (refineContext) {
+        contextText = refineContext(plan.files)
+        try {
+          if (plan.facts?.length) {
+            const head = (await sh(box, `cd ${q(repoDir)} && git rev-parse HEAD`, { allowFailure: true })).output.trim().split("\n").at(-1)?.trim() ?? ""
+            const filesNow = (await sh(box, `cd ${q(repoDir)} && git ls-files`, { allowFailure: true })).output.split("\n").filter(Boolean)
+            const check = verifyProvenance(plan.facts, { currentBaseCommit: head || null, existingSources: filesNow })
+            if (check.stale.length) contextText += staleFactsSection(check)
+            noteDecision(record, { stage: "provenance", choice: check.stale.length ? `flagged ${check.stale.length} stale plan fact(s)` : `verified ${check.fresh.length} stamped plan fact(s)`, evidence: plan.facts.map((f) => f.source ?? f.text), policy_or_label: "context-graph", outcome: check.stale.length ? "failed" : "succeeded" })
+          }
+          noteDecision(record, { stage: "planning", choice: `validated plan: ${plan.files.join(", ")}`, evidence: plan.files, policy_or_label: "plan-first", outcome: "succeeded" })
+        } catch { /* a tracing failure must not stop a valid plan */ }
+      }
       await comment(repo.repo, issue.number, redact(renderPlanComment(plan, { runUrl })))
       console.log(`Plan validated and posted to the issue: ${plan.files.length} file(s), ${plan.criteria.length} acceptance criteria.`)
     }
 
-    let result = await runAgent(box, config, worker.agent, { workDir: repoDir, jobDir, prompt: buildPrompt(repo, issue, comments, "", revising, plan), timeoutMinutes })
+    let result = await runAgent(box, config, worker.agent, { workDir: repoDir, jobDir, prompt: buildPrompt(repo, issue, comments, "", revising, plan, contextText), timeoutMinutes })
     noteAgentRun(record, result.minutes)
     console.log(`Agent finished in ${result.minutes} min with exit code ${result.code}.`)
 
@@ -319,7 +385,7 @@ async function main() {
     if (!checks.passed) {
       console.log(`Check failed: ${checks.command}. Giving the agent one chance to fix it.`)
       const extra = `\n# A check failed after your first attempt\n\nThe command \`${checks.command}\` failed with this output. Fix it.\n\n${redact(checks.output).slice(-3000)}\n`
-      result = await runAgent(box, config, worker.agent, { workDir: repoDir, jobDir, prompt: buildPrompt(repo, issue, comments, extra, revising, plan), timeoutMinutes })
+      result = await runAgent(box, config, worker.agent, { workDir: repoDir, jobDir, prompt: buildPrompt(repo, issue, comments, extra, revising, plan, contextText), timeoutMinutes })
       noteAgentRun(record, result.minutes)
       checks = result.code === 0 ? await runCommands(box, "checks", repoDir, jobDir, repo.checks, stepMinutes) : checks
     }
@@ -338,6 +404,8 @@ async function main() {
     // workflow moved out of .github/ is caught too.
     const staged = changedPaths((await sh(box, `cd ${q(repoDir)} && git diff --cached --name-only --no-renames`)).output)
     record.filesChanged = staged.length
+    record.files = staged
+    try { noteDecision(record, { stage: "implementation", choice: `changed ${staged.length} file(s): ${staged.slice(0, 10).join(", ")}`, evidence: staged.slice(0, 10).length ? staged.slice(0, 10) : [repo.repo], policy_or_label: record.labels.find((l) => !Object.values(labels).includes(l)) ?? "context-graph", outcome: checks.passed ? "succeeded" : "pending" }) } catch { /* tracing only */ }
     const blocked = protectedChanges(staged)
     if (blocked.length) {
       await needsAttention(`The agent changed files in \`.github/\`, which the factory never pushes, so no pull request was opened:\n\n${blocked.map((path) => `- \`${path}\``).join("\n")}\n\nIf the issue really needs a workflow change, make that change by hand.`, "protected-paths")

@@ -18,7 +18,9 @@
     "runRecords": true,
     "waitForWorkerMinutes": 20,
     "agentTimeoutMinutes": 25,
-    "commandTimeoutMinutes": 15
+    "commandTimeoutMinutes": 15,
+    "contextGraph": true,
+    "precedentsFile": "precedents.json"
   },
   "worker": {
     "provider": "docker",

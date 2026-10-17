@@ -43,6 +43,16 @@ itself; you only ever add `ready` (and optionally `agent:<name>`).
   review skip planning — the review feedback is their plan. Set
   `"planFirst": false` to go straight to implementation. Planning costs
   one extra agent run.
+- Context Graph: with `"contextGraph": true` in `factory.config.json`
+  (the template's default) past run records teach the next run. Build the
+  flat index after downloading records and commit it:
+  `node scripts/precedents.mjs runs`. A run then gets a context bundle in
+  its prompt — short-term (this issue and its latest trusted comments),
+  long-term (repo facts such as `AGENTS.md`/`CLAUDE.md`, checks and a file
+  map) and reasoning (the top 3 past runs sharing a label or a file,
+  failures included) — traces its decisions in the run record's
+  `decisions[]`, and re-checks any provenance-stamped plan facts before
+  coding. Set `"contextGraph": false` for the old prompts.
 - `agent:<name>` — optional. Put this on before `ready` to force a specific
   agent type. The factory reads labels at the moment the run starts.
 
