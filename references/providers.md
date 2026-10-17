@@ -106,8 +106,17 @@ whatever tool owns the VPC.
 ## Cleanup and stuck containers
 
 Normal cleanup is automatic: `releaseWorker` removes the container in the
-`finally` of every run. After a killed runner a container can survive.
-Find factory containers with:
+`finally` of every run. After a killed runner a container can survive. Free
+the worker (and remove its stuck containers) with the same script the Box
+provider uses:
+
+```bash
+node --env-file=.env scripts/release-worker.mjs <worker id>
+```
+
+It removes every factory container labelled `worker=<id>`; removing a
+container is the whole cleanup, the workspace and every sign-in file go
+with it. By hand it is:
 
 ```bash
 docker ps --filter label=create-ant-factory=true
