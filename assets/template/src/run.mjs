@@ -143,7 +143,7 @@ async function main() {
     // The token is removed from the clone here and only used again for the push.
     await sh(
       box,
-      `cd ${q(repoDir)} && git remote set-url origin https://github.com/${repo.repo}.git && git checkout --quiet -b ${q(branch)} && git config user.name ${q(config.factory.gitAuthor.name)} && git config user.email ${q(config.factory.gitAuthor.email)}`,
+      `cd ${q(repoDir)} && git remote set-url origin ${q(`https://github.com/${repo.repo}.git`)} && git checkout --quiet -b ${q(branch)} && git config user.name ${q(config.factory.gitAuthor.name)} && git config user.email ${q(config.factory.gitAuthor.email)}`,
     )
     // Things the setup creates inside the repo folder (a virtualenv, caches) must
     // not end up in the pull request when the repo's own .gitignore misses them.
