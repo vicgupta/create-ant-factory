@@ -2,7 +2,7 @@
 //
 // Run with: node --env-file=.env src/run.mjs owner/app-repo 12
 import { loadConfig, findRepo } from "./config.mjs"
-import { getIssue, getHumanComments, trustedComments, addLabels, removeLabel, comment, openPullRequest } from "./github.mjs"
+import { getIssue, getHumanComments, trustedComments, capComments, addLabels, removeLabel, comment, openPullRequest } from "./github.mjs"
 import { claimWorker, releaseWorker, sh, q, runScript, startBrowser } from "./box.mjs"
 import { signIn, writeJobFiles, writeRepoEnv, runAgent, secretPaths, REPO_ENV_FILE } from "./agents.mjs"
 import { collectSecrets, redactSecrets } from "./redact.mjs"
@@ -19,8 +19,13 @@ const runUrl = process.env.GITHUB_RUN_ID
 
 function buildPrompt(repo, issue, comments, extra = "") {
   // A person who answers the agent's question in a comment is heard this way.
-  const said = comments.map((c) => `**${c.author}:** ${c.body.trim()}\n`)
-  const discussion = said.length ? ["", "# Comments on the issue, oldest first", "", ...said].join("\n") : ""
+  // The comment section is capped so a long thread cannot swallow the agent's
+  // context; the newest comments are the ones that matter, and the note below
+  // tells the agent that older ones were left out.
+  const { kept, dropped } = capComments(comments)
+  const said = kept.map((c) => `**${c.author}:** ${c.body.trim()}\n`)
+  const note = dropped ? [`(${dropped} older comment(s) were left out to keep this short. The newest ${kept.length} are below.)`, ""] : []
+  const discussion = said.length ? ["", "# Comments on the issue, oldest first", "", ...note, ...said].join("\n") : ""
   const checks = repo.checks.length
     ? `After you finish, these commands must pass. Run them yourself before you stop:\n${repo.checks.map((c) => `    ${c}`).join("\n")}`
     : "This repo has no automated checks, so read your change again before you stop."
