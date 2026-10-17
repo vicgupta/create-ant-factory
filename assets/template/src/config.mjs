@@ -276,11 +276,13 @@ export function workerNoun(config) {
   return workerProvider(config) === "docker" ? "Container" : "Box"
 }
 
-// Box-lifecycle scripts (provision-workers, delete-workers, smoke-test)
-// create, delete or inspect Upstash Boxes. Under the Docker provider there are
-// no Boxes: one container is created per job and removed when the job ends.
-// Running one of those scripts in a Docker factory would create real Upstash
-// Boxes (billed on the plan) that the factory never uses, so the scripts call
+// Box-only scripts (provision-workers, delete-workers, smoke-test,
+// build-snapshot, apply-box-settings, box-exec) create, delete, inspect,
+// run commands in or take snapshots of Upstash Boxes. Under the Docker
+// provider there are no Boxes: one container is created per job and removed
+// when the job ends. Running one of those scripts in a Docker factory would
+// create real Upstash Boxes (billed on the plan) that the factory never
+// uses, or address a container name as a Box, so the scripts call
 // this first and refuse with the Docker equivalent instead of doing the wrong
 // thing quietly. Old factories with no "worker" section keep the "box"
 // fallback in workerProvider, so they are unaffected.
