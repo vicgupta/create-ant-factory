@@ -6,7 +6,7 @@ import assert from "node:assert/strict"
 import { mkdtempSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { loadConfig, workerProvider, dockerConfig } from "../src/config.mjs"
+import { loadConfig, workerProvider, dockerConfig, requireBoxProvider } from "../src/config.mjs"
 import { buildDockerRunArgs, buildDockerSmokeArgs, containerNameFor, containersForWorker, createDockerWorker, dockerPsArgs, formatDockerRunCommand, parseDockerInfo, parseDockerPs, parseDockerSystemDf, parseDockerVersion, parseMemoryBytes, summarizeDockerChecks, verifyDocker } from "../src/docker.mjs"
 
 const baseConfig = () => ({
@@ -182,4 +182,26 @@ test("dockerPsArgs lists running containers by default and stopped ones with all
 test("containersForWorker keeps a stopped leftover so release-worker removes it", () => {
   const rows = parseDockerPs("factory-claude-01-7\tExited (137) 2 hours ago\tcreate-ant-factory=true,worker=claude-01,run-id=7\nfactory-claude-01-9\tUp 1m\tcreate-ant-factory=true,worker=claude-01,run-id=9")
   assert.deepEqual(containersForWorker(rows, "claude-01").map((c) => c.name), ["factory-claude-01-7", "factory-claude-01-9"])
+})
+
+test("requireBoxProvider passes for the box provider, including configs with no worker section", () => {
+  const legacy = load(baseConfig()) // no "worker" key: the box fallback keeps old factories working
+  assert.equal(workerProvider(legacy), "box")
+  assert.doesNotThrow(() => requireBoxProvider(legacy, "provision-workers.mjs"))
+  const explicit = load({ ...baseConfig(), worker: { provider: "box" } })
+  assert.doesNotThrow(() => requireBoxProvider(explicit, "smoke-test.mjs"))
+  assert.doesNotThrow(() => requireBoxProvider(explicit, "delete-workers.mjs"))
+})
+
+test("requireBoxProvider refuses under docker and points at the docker equivalent", () => {
+  const config = load({ ...baseConfig(), worker: { provider: "docker" } })
+  assert.throws(
+    () => requireBoxProvider(config, "provision-workers.mjs"),
+    (error) => {
+      assert.match(error.message, /worker\.provider is "docker"/)
+      assert.match(error.message, /provision-workers\.mjs/)
+      assert.match(error.message, /verify-docker\.mjs/)
+      return true
+    },
+  )
 })
