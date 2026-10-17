@@ -126,6 +126,33 @@ Caveat to tell the user: the Box gets a copy of the same login their machine use
 
 User-level instructions go in `~/.codex/AGENTS.md`. The `skills` tool installs Codex skills to `~/.agents/skills`.
 
+## OpenCode
+
+Install it in the worker image: `npm install --global opencode-ai` (added to `worker/Dockerfile` and `worker/setup.sh`). It ships for ARM64 Linux through npm's platform packages — the smoke test confirms.
+
+**With an API key** (any provider on OpenCode's provider list): OpenCode reads provider keys from the environment at startup, so an `env` auth entry is enough. No browser sign-in needed.
+
+```json
+"opencode": {
+  "auth": [{ "secret": "ANTHROPIC_API_KEY", "env": "ANTHROPIC_API_KEY" }],
+  "boxSettings": [
+    { "path": "/workspace/home/.config/opencode/opencode.json", "format": "json", "values": { "model": "anthropic/claude-sonnet-4-5", "autoupdate": false } }
+  ],
+  "promptExtra": "When you are done, write your summary to the file {summary}, and nothing else to that file.",
+  "command": "opencode run --auto \"$(cat {prompt})\" < /dev/null"
+}
+```
+
+Why each piece, from the current docs (https://opencode.ai/docs):
+
+- `opencode run` is the non-interactive mode, made for scripting and automation. `--auto` auto-approves permissions that are not explicitly denied, so nothing stops for a question nobody can answer. `--model` takes `provider/model` if you want it in the command instead of `boxSettings`, but keep it in `boxSettings` so the Box stays the single place model choice is decided. The trailing `< /dev/null` matters: with stdin left as an open pipe (as it is under the factory's runner), `run` waits on stdin instead of proceeding; closing it makes the command fail fast on errors instead of hanging.
+- The run streams tool results and progress symbols to stdout, so redirecting stdout to `{summary}` would make a noisy PR description. `promptExtra` has the agent write the summary file itself instead — the factory's supported pattern for this case.
+- `model` in `opencode.json` takes `provider/model` (Anthropic, OpenAI, Google, and anything models.dev lists). `autoupdate: false` stops the CLI from updating itself inside the worker, so the image stays the version that was tested. OpenCode also reads `auth.json` credentials (`opencode auth login` writes them to `~/.local/share/opencode/auth.json`), which is the `file` auth route if you ever want a subscription-style login instead of a key.
+
+To give it a worker, add `{ "id": "opencode-01", "agent": "opencode", "enabled": true }` to `workers`, run `install-trigger.mjs` for the `agent:opencode` label, and set the provider key with `set-secrets.mjs`. An agent type with no enabled worker gets no label and no secrets, so adding the type alone changes nothing for existing factories.
+
+User-level instructions: OpenCode reads `AGENTS.md` in the repo natively, and `jobFiles` can place a house one. Cost: OpenCode itself is free and open source — billing is whatever the provider key bills.
+
 ## Any other agent
 
 Work through these with the user, then prove it with the smoke test.
