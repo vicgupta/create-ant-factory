@@ -13,6 +13,13 @@ const MAX_LABEL_LENGTH = 20 // Upstash Box label limit
 // strict character class is a security check, not pedantry.
 const REPO_NAME = /^[A-Za-z0-9][A-Za-z0-9._-]*\/[A-Za-z0-9][A-Za-z0-9._-]*$/
 
+// Agent env keys and secret "env" names are written as `export NAME='value'`
+// lines into files the job sources in bash. A name that is not a shell
+// identifier ("MY-VAR", "API KEY", "1TOKEN") makes that `source` fail inside
+// the Box, so the job dies far from the config. Reject it here instead.
+const ENV_NAME = /^[A-Za-z_][A-Za-z0-9_]*$/
+export const isEnvName = (name) => typeof name === "string" && ENV_NAME.test(name)
+
 export function loadConfig(file = CONFIG_FILE) {
   const config = JSON.parse(readFileSync(file, "utf8"))
   // Paths in the config (jobFiles, setup scripts) are relative to the config file.
@@ -33,6 +40,13 @@ export function loadConfig(file = CONFIG_FILE) {
     const name = config.labels[key]
     if (typeof name !== "string" || !name.trim()) {
       errors.push(`labels.${key} must be the name of the GitHub issue label (a non-empty string)`)
+    } else if (name.includes("'")) {
+      // install-trigger.mjs writes labels.ready into a single-quoted GitHub
+      // Actions expression (github.event.label.name == '...'). A quote ends
+      // that string early, GitHub rejects the whole workflow file, and the
+      // trigger stops working with no visible error. One rule for all four
+      // names, so a later template change cannot reintroduce it elsewhere.
+      errors.push(`labels.${key} must not contain a single quote: it would generate an invalid trigger workflow`)
     }
   }
   const labelNames = new Set()
@@ -64,6 +78,19 @@ export function loadConfig(file = CONFIG_FILE) {
   if (!Array.isArray(config.factory.allowedActors) || config.factory.allowedActors.length === 0 || config.factory.allowedActors.includes("OWNER")) {
     errors.push("factory.allowedActors needs the real GitHub usernames that may start the factory")
   }
+  // install-trigger.mjs puts these names inside fromJSON('...') in the
+  // trigger workflow, so a quote would generate an invalid file the same way
+  // as in a label name. A typo'd name (a space, an @-prefix) is quieter and
+  // worse: it loads fine, and then the actor guard never matches anyone, so
+  // every manual "Run workflow" run is refused without saying why. Looser
+  // than GitHub's full signup rules on purpose: letters, digits, hyphens.
+  if (Array.isArray(config.factory.allowedActors)) {
+    for (const actor of config.factory.allowedActors) {
+      if (typeof actor !== "string" || !/^[A-Za-z0-9-]+$/.test(actor)) {
+        errors.push(`factory.allowedActors has ${JSON.stringify(actor)}, which is not a GitHub username (letters, digits and hyphens)`)
+      }
+    }
+  }
 
   // Left out means true. Browser access is fixed when a Box is created, so the
   // default is the choice that never forces anyone to delete Boxes later.
@@ -73,9 +100,27 @@ export function loadConfig(file = CONFIG_FILE) {
 
   // Every pull request goes to branchPrefix + the issue number. Without the
   // prefix the branch would be "undefined12", a failure that shows up far
-  // from this file, so require it here.
+  // from this file, so require it here. It also has to survive
+  // `git checkout -b` in run.mjs, so it must form a legal branch name once
+  // the issue number is appended. Without this check a prefix like
+  // "factory 2/" fails mid-run, after a worker was already claimed. The
+  // prefix on its own may end with "/" ("factory/" is a fine prefix): the
+  // check runs on a sample branch name, not the bare prefix.
   if (typeof config.factory.branchPrefix !== "string" || !config.factory.branchPrefix) {
     errors.push('factory.branchPrefix must be a non-empty string, for example "factory/issue-"')
+  } else if (!isValidBranchPrefix(config.factory.branchPrefix)) {
+    errors.push(
+      `factory.branchPrefix "${config.factory.branchPrefix}" is not usable in a git branch name. Keep letters, digits, "-", "_" and "/", and do not use spaces or any of ~ ^ : ? * [ \\, ".." or "@{"`,
+    )
+  }
+
+  // Every worker Box (and Docker container) is named boxNamePrefix + worker id,
+  // and check-setup flags any Box whose name starts with the prefix as a clash.
+  // Left out, workers become "undefinedclaude-01"; left empty, every Box on the
+  // account looks like a clash. Letters, digits, ".", "_" and "-" are safe for
+  // both Upstash Box and Docker container names.
+  if (typeof config.factory.boxNamePrefix !== "string" || !/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(config.factory.boxNamePrefix)) {
+    errors.push(`factory.boxNamePrefix must be a non-empty name such as "factory-" (letters, digits, ".", "_" or "-", starting with a letter or digit), not ${JSON.stringify(config.factory.boxNamePrefix)}`)
   }
 
   // A zero, negative or non-numeric timeout also fails far from the cause:
@@ -85,6 +130,14 @@ export function loadConfig(file = CONFIG_FILE) {
     if (value !== undefined && (typeof value !== "number" || !Number.isFinite(value) || value <= 0)) {
       errors.push(`factory.${key} must be a positive number of minutes, not ${JSON.stringify(value)}`)
     }
+  }
+
+  // The Box budget in check-setup.mjs subtracts from this. A non-numeric
+  // value turns the spare-Boxes sum into NaN, which reads as green: "NaN
+  // spare" is not less than zero and not equal to zero, so it takes the ok
+  // path. A plan limit is a whole number of Boxes, so require that here.
+  if (config.factory.boxLimit !== undefined && (!Number.isInteger(config.factory.boxLimit) || config.factory.boxLimit <= 0)) {
+    errors.push(`factory.boxLimit must be a positive number of Boxes on the Upstash plan, not ${JSON.stringify(config.factory.boxLimit)}`)
   }
 
   for (const [name, agent] of Object.entries(config.agents)) {
@@ -116,8 +169,12 @@ export function loadConfig(file = CONFIG_FILE) {
       if (!file.from || !file.to?.startsWith("/")) errors.push(`agent "${name}": each jobFiles entry needs "from" (a path in this repo) and "to" (an absolute path in the Box)`)
       else if (!existsSync(new URL(file.from, config.baseUrl))) errors.push(`agent "${name}": jobFiles source "${file.from}" does not exist in this repo`)
     }
+    for (const key of Object.keys(agent.env ?? {})) {
+      if (!isEnvName(key)) errors.push(`agent "${name}": env name "${key}" must be a shell variable name (letters, digits and "_", not starting with a digit)`)
+    }
     for (const entry of agent.auth ?? []) {
       if (!entry.secret || (!entry.env && !entry.file)) errors.push(`agent "${name}": each auth entry needs a secret and an env or a file`)
+      else if (entry.env && !isEnvName(entry.env)) errors.push(`agent "${name}": auth env "${entry.env}" must be a shell variable name (letters, digits and "_", not starting with a digit)`)
     }
   }
 
@@ -130,8 +187,19 @@ export function loadConfig(file = CONFIG_FILE) {
     repo.setup ??= []
     repo.checks ??= []
     repo.exclude ??= []
+    // A plain string such as "setup": "npm ci" is an easy slip. It would only
+    // fail inside a claimed worker, after the clone: run.mjs walks the string
+    // one character at a time and then crashes on commands.flatMap, and
+    // plan.mjs crashes on .join. So each of these must be a list of strings.
+    for (const key of ["setup", "checks", "exclude"]) {
+      const list = repo[key]
+      if (!Array.isArray(list) || list.some((item) => typeof item !== "string" || !item.trim())) {
+        errors.push(`repo "${repo.repo}": ${key} must be a list of non-empty strings, for example ${key === "exclude" ? '[".venv/"]' : '["npm ci"]'}, not ${JSON.stringify(list)}`)
+      }
+    }
     for (const entry of repo.secrets ?? []) {
       if (!entry.secret || !entry.env) errors.push(`repo "${repo.repo}": each secrets entry needs a secret (its name in .env and GitHub) and an env (the variable the repo expects)`)
+      else if (!isEnvName(entry.env)) errors.push(`repo "${repo.repo}": secrets env "${entry.env}" must be a shell variable name (letters, digits and "_", not starting with a digit)`)
     }
   }
 
@@ -162,6 +230,22 @@ export function loadConfig(file = CONFIG_FILE) {
 
   if (errors.length) throw new Error(`factory.config.json:\n  - ${errors.join("\n  - ")}`)
   return config
+}
+
+// Git branch names follow git check-ref-format. The issue number is appended
+// to the prefix, so the check runs on a sample branch name instead of the
+// bare prefix: "factory/" alone is not a name, but "factory/12" is fine.
+export function isValidBranchPrefix(prefix) {
+  const name = `${prefix}0`
+  if (name === "@") return false
+  if (name.startsWith("/") || name.endsWith("/") || name.endsWith(".")) return false
+  if (name.includes("..") || name.includes("@{")) return false
+  // No control characters, spaces, or ~ ^ : ? * [ \
+  if (/[\x00-\x20\x7f~^:?*[\]\\]/.test(name)) return false
+  for (const component of name.split("/")) {
+    if (component === "" || component.startsWith(".") || component.endsWith(".lock")) return false
+  }
+  return true
 }
 
 // Which worker provider runs jobs. Upstash Box is the default so existing
