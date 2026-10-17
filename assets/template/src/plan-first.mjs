@@ -33,6 +33,7 @@ export const MANUAL_CHECK = "manual-review"
 export const MAX_PLAN_CHARS = 12000
 export const MAX_PLAN_FILES = 50
 export const MAX_PLAN_CRITERIA = 20
+export const MAX_PLAN_FACTS = 20
 
 const heading = (line) => /^#{1,6}\s+(.*?)\s*$/.exec(line)?.[1]?.toLowerCase() ?? null
 
@@ -40,20 +41,30 @@ const heading = (line) => /^#{1,6}\s+(.*?)\s*$/.exec(line)?.[1]?.toLowerCase() ?
 // blank lines are ignored, so the agent may add a short intro. A criterion's
 // mapping is the text after the last "check:"; without one, check is null and
 // validation rejects it.
+// One stamped fact from the optional "## Facts" section (Context Graph,
+// src/context.mjs): "- <claim> — source: <file>; base: <sha>; run: <run id>".
+// Kept line-based like the rest of the plan so parsing stays a pure function.
+export function parsePlanFact(item) {
+  const m = /^(.*?)\s*—\s*source:\s*([^;]+);\s*base:\s*([^;]+);\s*run:\s*([^;]+)(?:;\s*observed_at:\s*(.+))?$/i.exec(item)
+  return m ? { text: m[1].trim(), source: m[2].trim(), baseCommit: m[3].trim(), runId: m[4].trim(), observedAt: m[5]?.trim() ?? null } : { text: item, source: null, baseCommit: null, runId: null, observedAt: null }
+}
+
 export function parsePlan(text) {
-  const plan = { files: [], criteria: [] }
+  const plan = { files: [], criteria: [], facts: [] }
   let section = null
   for (const raw of String(text ?? "").split("\n")) {
     const line = raw.trim()
     const head = heading(line)
     if (head !== null) {
-      section = head.startsWith("files to touch") ? "files" : head.startsWith("acceptance criteria") ? "criteria" : null
+      section = head.startsWith("files to touch") ? "files" : head.startsWith("acceptance criteria") ? "criteria" : head.startsWith("facts") ? "facts" : null
       continue
     }
     if (!section || !/^[-*]\s+/.test(line)) continue
     const item = line.replace(/^[-*]\s+/, "").replace(/^\[[ xX]\]\s+/, "").trim()
     if (!item) continue
-    if (section === "files") {
+    if (section === "facts") {
+      plan.facts.push(parsePlanFact(item))
+    } else if (section === "files") {
       // "- src/a.mjs — reason" / "- src/a.mjs: reason": the path is the first
       // token; the reason is the agent's note for humans and is not kept.
       plan.files.push(item.split(/\s+/)[0].replace(/`/g, "").replace(/:$/, ""))
@@ -88,6 +99,16 @@ export function validatePlan(plan, repo = {}) {
   for (const file of protectedChanges(plan.files ?? [])) errors.push(`"${file}" is under .github/, which the factory never pushes`)
   if (!plan.criteria?.length) errors.push("the plan lists no acceptance criteria")
   if (plan.criteria?.length > MAX_PLAN_CRITERIA) errors.push(`the plan lists ${plan.criteria.length} acceptance criteria; the limit is ${MAX_PLAN_CRITERIA}`)
+  if (plan.facts?.length > MAX_PLAN_FACTS) errors.push(`the plan lists ${plan.facts.length} facts; the limit is ${MAX_PLAN_FACTS}`)
+  // Facts are optional (older agents write none), but a stamped fact must
+  // carry its whole stamp or the stale-check in src/context.mjs is a guess.
+  for (const fact of plan.facts ?? []) {
+    if (!fact.text) errors.push("a plan fact has no claim text")
+    if (!fact.source) errors.push(`fact "${fact.text}" has no source stamp (write "— source: <file>; base: <commit sha>; run: <run id>")`)
+    else if (!isSafeRelativePath(fact.source)) errors.push(`fact "${fact.text}" source "${fact.source}" is not a safe relative file path`)
+    if (fact.source && !/^[0-9a-f]{7,40}$/i.test(fact.baseCommit ?? "")) errors.push(`fact "${fact.text}" base stamp "${fact.baseCommit}" is not a commit SHA (7-40 hex characters)`)
+    if (fact.source && !fact.runId) errors.push(`fact "${fact.text}" has no observing run id stamp`)
+  }
   for (const criterion of plan.criteria ?? []) {
     if (!criterion.text) errors.push("an acceptance criterion has no text")
     if (!criterion.check) errors.push(`criterion "${criterion.text}" names no check (write "— check: <a configured check>" or "— check: ${MANUAL_CHECK}")`)
@@ -118,6 +139,7 @@ export function renderPlanComment(plan, { runUrl = null } = {}) {
     "## Acceptance criteria",
     "",
     ...plan.criteria.map((c) => `- [ ] ${c.text} — check: \`${c.check}\``),
+    ...(plan.facts?.length ? ["", "## Facts (provenance-stamped)", "", ...plan.facts.map((f) => `- ${f.text} — source: ${f.source}; base: ${f.baseCommit}; run: ${f.runId}${f.observedAt ? `; observed_at: ${f.observedAt}` : ""}`)] : []),
     ...(runUrl ? ["", `[Factory run](${runUrl})`] : []),
   ].join("\n")
 }
@@ -136,6 +158,7 @@ export function planSection(plan) {
     "",
     "Acceptance criteria (each mapped to the check that proves it):",
     ...plan.criteria.map((c) => `- ${c.text} — check: ${c.check}`),
+    ...(plan.facts?.length ? ["", "Facts the planning pass stamped (source file, base commit, observing run). Re-check any that look stale from the current code:", ...plan.facts.map((f) => `- ${f.text} — source: ${f.source}; base: ${f.baseCommit}; run: ${f.runId}`)] : []),
     "",
   ].join("\n")
 }

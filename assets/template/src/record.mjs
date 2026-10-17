@@ -22,6 +22,47 @@ const SUCCESS = new Set(["pr-opened", "pr-revised"])
 // is posted anywhere.
 export const recordsEnabled = (config) => config?.factory?.runRecords !== false
 
+// A decision a run made, traced so a later run can learn from it (see
+// src/context.mjs). Deliberately small and free-text-light: a stage, the
+// choice, what was rejected, where the evidence is (files, checks or an
+// issue/PR link as a plain string), the policy or label behind the choice,
+// who asked for it when a person did, and how it turned out. No prompt or
+// log text goes here either.
+export const DECISION_OUTCOMES = ["pending", "succeeded", "failed", "rejected", "reverted"]
+export const MAX_DECISIONS = 50
+
+const isStrings = (v) => Array.isArray(v) && v.every((x) => typeof x === "string" && x.trim())
+
+export function validateDecision(decision) {
+  const errors = []
+  if (!decision || typeof decision !== "object") return ["a decision must be an object"]
+  if (typeof decision.stage !== "string" || !decision.stage.trim()) errors.push("a decision needs a stage (a non-empty string)")
+  if (typeof decision.choice !== "string" || !decision.choice.trim()) errors.push("a decision needs a choice (a non-empty string)")
+  if (decision.alternatives_rejected !== undefined && !isStrings(decision.alternatives_rejected)) errors.push("a decision's alternatives_rejected must be a list of non-empty strings")
+  if (!isStrings(decision.evidence) || decision.evidence.length === 0) errors.push("a decision needs evidence: a list of non-empty strings (files, checks or issue/PR links)")
+  if (typeof decision.policy_or_label !== "string" || !decision.policy_or_label.trim()) errors.push("a decision needs a policy_or_label (a non-empty string)")
+  if (decision.human_actor !== undefined && decision.human_actor !== null && (typeof decision.human_actor !== "string" || !decision.human_actor.trim())) errors.push("a decision's human_actor must be a non-empty string when present")
+  if (!DECISION_OUTCOMES.includes(decision.outcome)) errors.push(`a decision's outcome must be one of: ${DECISION_OUTCOMES.join(", ")}`)
+  return errors
+}
+
+export function noteDecision(record, decision) {
+  const errors = validateDecision(decision)
+  if (errors.length) throw new Error(`Invalid run-record decision: ${errors.join("; ")}`)
+  record.decisions ??= []
+  if (record.decisions.length >= MAX_DECISIONS) return record
+  record.decisions.push({
+    stage: decision.stage.trim(),
+    choice: decision.choice.trim(),
+    ...(decision.alternatives_rejected?.length ? { alternatives_rejected: [...decision.alternatives_rejected] } : {}),
+    evidence: [...decision.evidence],
+    policy_or_label: decision.policy_or_label.trim(),
+    ...(decision.human_actor ? { human_actor: decision.human_actor.trim() } : {}),
+    outcome: decision.outcome,
+  })
+  return record
+}
+
 export function recordDir(env = process.env) {
   return env.FACTORY_RUN_RECORD_DIR?.trim() || DEFAULT_RECORD_DIR
 }
@@ -49,6 +90,10 @@ export function createRunRecord({ repo, issue, runId, runUrl = null, now = new D
     outcome: null,
     reason: null,
     pullRequest: null,
+    labels: [],
+    files: [],
+    decisions: [],
+    contextBundle: [],
   }
 }
 
@@ -106,6 +151,8 @@ export function stepSummary(record) {
     ["Check attempts", record.checkAttempts],
     ["Files changed", record.filesChanged],
     ["Pull request", record.pullRequest],
+    ["Decisions traced", record.decisions?.length ?? 0],
+    ["Context layers", (record.contextBundle ?? []).map((e) => e.layer).filter((v, i, a) => a.indexOf(v) === i).join(", ") || null],
   ]
   return ["### Factory run record", "", "| | |", "|---|---|", ...rows.map(([k, v]) => `| ${k} | ${cell(v)} |`), ""].join("\n")
 }

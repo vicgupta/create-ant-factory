@@ -118,6 +118,17 @@ export function loadConfig(file = CONFIG_FILE) {
     errors.push("factory.runRecords must be true or false. With true (the default), every run writes a small run record that scripts/report.mjs turns into a report")
   }
 
+  // Left out means false. With it on, a run first builds a context bundle
+  // from past run records (src/context.mjs): exact label/path precedents,
+  // named short-term/long-term/reasoning layers, a decisions[] trace on the
+  // record, and provenance stamps on plan facts.
+  if (config.factory.contextGraph !== undefined && typeof config.factory.contextGraph !== "boolean") {
+    errors.push("factory.contextGraph must be true or false. With true, past run records become a precedent-aware context bundle in the agent prompt and each run traces its decisions")
+  }
+  if (config.factory.precedentsFile !== undefined && (typeof config.factory.precedentsFile !== "string" || !config.factory.precedentsFile.trim())) {
+    errors.push('factory.precedentsFile must be a non-empty file name such as "precedents.json" (built by scripts/precedents.mjs from downloaded run records)')
+  }
+
   // Every pull request goes to branchPrefix + the issue number. Without the
   // prefix the branch would be "undefined12", a failure that shows up far
   // from this file, so require it here. It also has to survive

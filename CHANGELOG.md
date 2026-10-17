@@ -18,6 +18,16 @@ loosely "Keep a Changelog"; versions are git tags (`0.1`, `0.2`, …).
   and nothing built. Revisions skip planning. Off by default for existing
   configs; the template turns it on, and `check-setup.mjs` counts the
   extra agent run in the timeout sum.
+- Precedent-aware context bundle, the Context Graph (`factory.contextGraph`,
+  off for existing configs, on in the template). Run records gain `labels`,
+  `files`, a validated `decisions[]` trace and a `contextBundle` layer log.
+  `scripts/precedents.mjs` builds a flat `precedents.json` keyed by labels
+  and touched paths (exact matching, top 3, failed/rejected/reverted runs
+  included; no embeddings or graph database). Runs inject short-term /
+  long-term / reasoning layers into the plan and implementation prompts,
+  refined by the plan's files once a plan exists. Plan `## Facts` carry
+  provenance stamps (source file, base commit SHA, observing run id);
+  stale stamps are flagged before coding, including on resume-from-review.
 - Run records and a report (`factory.runRecords`, on by default). Every run
   writes `runs/run-<id>.json` (worker, provider, agent, minutes, check
   attempts, files changed, outcome and reason code; never logs or replies),
