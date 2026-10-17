@@ -59,6 +59,8 @@ One entry per agent type. The name is 1 to 14 lowercase letters, digits or dashe
 | `secrets` | no | Secrets the repo's own setup, tests and checks need: `{ "secret": "TEST_DATABASE_URL", "env": "DATABASE_URL" }`. The value comes from `.env` locally and from the factory repo's GitHub secrets in a run. They are written to their own file in the Box for the job and removed after it. The agent sees them too, since it runs the tests. |
 | `exclude` | no | Patterns added to `.git/info/exclude` for the job, for things the setup creates inside the repo folder that the repo's `.gitignore` misses, such as `.venv/`. |
 
+`setup`, `checks` and `exclude` are each a list of strings, even for one entry (`["npm ci"]`, not `"npm ci"`). `loadConfig()` refuses anything else.
+
 All `setup` commands run as one bash login script, and so do all `checks`. State carries from one line to the next, so `python3 -m venv .venv` followed by `source .venv/bin/activate` works, and tools that the worker image put on `PATH` through `/etc/profile.d` are found. The first failing command stops the script, and its name is reported on the issue. A failing setup is reported as a factory problem, not as the agent's fault.
 
 ## worker
