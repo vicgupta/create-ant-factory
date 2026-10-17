@@ -1,8 +1,8 @@
 # Software Factory
 
-Put a `ready` label on a GitHub issue. A coding agent picks it up inside an Upstash Box, makes the change and opens a pull request. You review it and merge it yourself.
+Put a `ready` label on a GitHub issue. A coding agent picks it up inside a Docker container on your own machine, makes the change and opens a pull request. You review it and merge it yourself.
 
-Repos, workers and agent types are listed in [factory.config.json](factory.config.json). Workers run in Upstash Boxes by default; set `"worker": { "provider": "docker", ... }` there to run each job in a Docker container on your own host instead (build `worker/Dockerfile` first).
+Repos, workers and agent types are listed in [factory.config.json](factory.config.json). Workers run in Docker containers by default (build `worker/Dockerfile` first); set `"worker": { "provider": "box" }` there to use Upstash Boxes instead.
 
 <!-- Stage 9 of the skill: still to add here are the architecture diagrams,
 how to add a repo, a worker or an agent type. -->
@@ -54,4 +54,4 @@ With the Docker worker provider (`"worker": { "provider": "docker" }`), check th
 node --env-file=.env scripts/verify-docker.mjs
 ```
 
-The first shows who is free and who is busy. The second frees a worker that a cancelled run left marked busy. The third writes a changed model or effort setting into the Boxes that already exist.
+The first shows who is free and who is busy. The second frees a worker that a cancelled run left marked busy. The third writes a changed model or effort setting into the workers that already exist.
