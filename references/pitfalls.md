@@ -5,7 +5,7 @@ Every item here happened during the original build. The template already contain
 ## Security
 
 **Secrets that the agent or a check prints end up in pull request text.**
-The agent's reply becomes the PR description and failing setup or check output goes into issue comments, so anything printed there is public to the repo. `src/redact.mjs` collects every secret the job knows (the GitHub token, the worker's sign-in secrets, the repo's secrets) and `src/run.mjs` replaces each of them with `***` in everything it posts or logs. Values shorter than 8 characters are skipped, so keep secrets longer than that.
+The agent's reply becomes the PR description and failing setup or check output goes into issue comments, so anything printed there is public to the repo. `src/redact.mjs` collects every secret the job knows (the GitHub token, the worker's sign-in secrets, the repo's secrets) and `src/run.mjs` replaces each of them with `***` in everything it posts or logs. Values shorter than 8 characters are skipped, so keep secrets longer than that. The reply is also capped (`capSummary` in `src/github.mjs`, 60,000 characters): a runaway agent reply would otherwise fail the PR creation — GitHub caps bodies at 65,536 characters — after the commit and push were already made.
 
 **Git stores the GitHub token on the Box's disk.**
 The Box image configures git with `credential.helper = store`. A clone from a URL that contains the token writes it to `~/.git-credentials`, where the agent can read it. Fix: run the factory's git commands with `-c credential.helper=`, delete `~/.git-credentials` at the start of every job, and reset the remote URL to the token-free one before the agent starts. Verify after the first real run with `box-exec.mjs`.
@@ -13,11 +13,14 @@ The Box image configures git with `credential.helper = store`. A clone from a UR
 **A snapshot captures whatever is on the disk, secrets included.**
 The first worker image contained `~/.git-credentials`. `build-snapshot.mjs` now deletes known secret paths and then greps the disk for secret-looking text, and refuses to snapshot if anything is found. If you add an agent whose credentials look different, add a pattern to `factory.secretScanPatterns`. Those patterns are added to the built-in list, they do not replace it. If a bad snapshot was taken, delete it and rebuild.
 
+**The cleanup that deletes secrets must quote paths with `q()`.**
+A hand-written `'${p}'` breaks on a path with an apostrophe (`'/a'b'` becomes `/ab`), so `rm -rf` misses the secret file or hits the wrong path. `build-snapshot.mjs` and `smoke-test.mjs` quote every config path with the `q()` helper from `src/box.mjs`, the same helper `run.mjs` uses for the same cleanup.
+
 **A paused Box keeps its disk.**
 Sign-in files written for a job are still there after the pause. The template deletes them in `finally`. Keep it that way. A cancelled run never reaches `finally`, so `release-worker.mjs` deletes them too.
 
 **Anyone who can label can spend the subscription.**
-The trigger checks `github.actor` against `allowedActors`. Do not remove that check. `github.repository_owner` is the organisation for org repos, so a comparison against it never matches a person there. The "Run workflow" button on the factory repo is a second way in, open to everyone with write access to that repo, so `src/run.mjs` checks the actor against the same list.
+The trigger checks `github.actor` against `allowedActors`. Do not remove that check. The comparison is case-insensitive, like the one in `src/run.mjs`: a mixed-case entry still matches. A refused actor fails the trigger step with a message instead of the job silently skipping. `github.repository_owner` is the organisation for org repos, so a comparison against it never matches a person there. The "Run workflow" button on the factory repo is a second way in, open to everyone with write access to that repo, so `src/run.mjs` checks the actor against the same list.
 
 **Agent transcripts end up in an image.**
 Images are built in worker Boxes that may have done jobs. Claude Code and Codex keep full transcripts, app code included, under `~/.claude/projects` and `~/.codex/sessions`. `build-snapshot.mjs` deletes those, the agent types' `jobFiles`, and anything in `factory.imageCleanPaths` before the snapshot.
@@ -109,6 +112,9 @@ Several agents working on one small repo all edit the same few files. Each PR is
 **`Closes #N` closes the issue on merge**, but the `factory:review` label stays on the closed issue. Harmless.
 
 ## Upstash Box
+
+**Two runs can claim the same worker if their run labels collide.**
+`claimWorker` marks a claimed Box with `run-<run id>`, and a rival run that reaches the same worker at the same moment backs off when it sees a lower label. The label is capped at 20 characters (the Box limit), and truncating the front of a long run id would discard exactly the digits that tell two runs starting together apart: GitHub run ids grow at the tail, so adjacent runs would compute the same label, the rival check would see no difference, and both agents would share one Box, each `rm -rf`-ing the other's work directory. `runLabelFor` keeps the last 16 digits instead, which always fits and stays readable, so a stale label still matches its run in the console.
 
 **The Box limit counts paused Boxes.**
 The free plan allowed 10 Boxes in total. Creating one more fails with "Box limit reached". Count existing Boxes before provisioning, and leave a slot for smoke tests if you can.
