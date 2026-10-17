@@ -54,3 +54,15 @@ jobs:
       - name: Do the work and open a pull request
         if: vars.FACTORY_DRY_RUN != 'true'
         run: node src/run.mjs
+      # Every run writes runs/run-<id>.json (src/record.mjs): worker, provider,
+      # agent, minutes, check attempts, files changed and the outcome, never
+      # logs. Kept as an artifact so scripts/report.mjs can aggregate them.
+      # Turn off with "runRecords": false under factory in factory.config.json.
+      - name: Keep the run record
+        if: always() && vars.FACTORY_DRY_RUN != 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: run-record-${{ github.run_id }}-${{ github.run_attempt }}
+          path: runs/
+          if-no-files-found: ignore
+          retention-days: 90

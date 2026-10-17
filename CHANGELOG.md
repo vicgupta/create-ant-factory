@@ -7,6 +7,13 @@ loosely "Keep a Changelog"; versions are git tags (`0.1`, `0.2`, …).
 
 ### Features
 
+- Run records and a report (`factory.runRecords`, on by default). Every run
+  writes `runs/run-<id>.json` (worker, provider, agent, minutes, check
+  attempts, files changed, outcome and reason code; never logs or replies),
+  adds it to the Actions job summary, and the workflow uploads it as an
+  artifact even when the run fails. `scripts/report.mjs` (`npm run report`)
+  aggregates downloaded records into pass rate, median time to PR and
+  rework, per agent type and per provider.
 - Resume-from-review mode (`factory.resumeFromReview`). Re-adding `ready` to
   an issue whose factory pull request is still open revises that pull
   request in place: the existing branch is checked out, trusted review
