@@ -5,7 +5,7 @@ import assert from "node:assert/strict"
 import { mkdtempSync, writeFileSync, readFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { loadConfig } from "../src/config.mjs"
+import { loadConfig, workerNoun } from "../src/config.mjs"
 
 const baseConfig = () => ({
   factory: {
@@ -154,4 +154,11 @@ test("the template's agent types each have a summary delivery path", () => {
     const viaExtra = (agent.promptExtra ?? "").includes("{summary}")
     assert.ok(viaCommand || viaExtra, `${name} delivers the summary through {summary} in command or promptExtra`)
   }
+})
+
+test("workerNoun names a worker's unit: Container under the Docker provider, Box otherwise", () => {
+  assert.equal(workerNoun({}), "Box")
+  assert.equal(workerNoun({ worker: {} }), "Box")
+  assert.equal(workerNoun({ worker: { provider: "box" } }), "Box")
+  assert.equal(workerNoun({ worker: { provider: "docker" } }), "Container")
 })

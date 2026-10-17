@@ -5,7 +5,7 @@
 import { loadConfig, findRepo } from "./config.mjs"
 import { getIssue } from "./github.mjs"
 import { getWorkerStates, pickWorker } from "./workers.mjs"
-import { workerProvider } from "./config.mjs"
+import { workerProvider, workerNoun } from "./config.mjs"
 import { createDockerWorker } from "./docker.mjs"
 import { resumeEnabled, findFactoryPullRequest } from "./review.mjs"
 
@@ -41,9 +41,10 @@ async function main() {
   }
 
   const states = await getWorkerStates(config)
+  const noun = workerNoun(config)
   console.log("\nWorkers:")
   for (const w of states)
-    console.log(`  ${w.id.padEnd(16)} ${w.agent.padEnd(15)} ${w.state.padEnd(9)} Box: ${w.boxStatus}`)
+    console.log(`  ${w.id.padEnd(16)} ${w.agent.padEnd(15)} ${w.state.padEnd(9)} ${noun}: ${w.boxStatus}`)
 
   const worker = pickWorker(states, issueLabels, 0, config.agents)
   if (!worker) {
