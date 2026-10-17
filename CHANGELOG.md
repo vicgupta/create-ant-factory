@@ -3,6 +3,19 @@
 All notable changes to create-ant-factory are documented here. The format is
 loosely "Keep a Changelog"; versions are git tags (`0.1`, `0.2`, …).
 
+## Unreleased
+
+### Features
+
+- Resume-from-review mode (`factory.resumeFromReview`). Re-adding `ready` to
+  an issue whose factory pull request is still open revises that pull
+  request in place: the existing branch is checked out, trusted review
+  feedback and failing check runs go into the prompt, the revision is a
+  normal push (never `--force`), and the factory replies on the pull request
+  before moving the issue back to `factory:review`. `plan.mjs` shows when a
+  run would revise. Off by default for existing configs; the template turns
+  it on.
+
 ## 0.2 — 2026-10-17
 
 Thirty-one pull requests since 0.1, each reviewed with its test suite run

@@ -98,6 +98,13 @@ export function loadConfig(file = CONFIG_FILE) {
     errors.push('factory.browser must be true or false. It gives every Box browser access, and the default is true')
   }
 
+  // Left out means false. With it on, re-adding the ready label to an issue
+  // whose factory pull request is still open revises that pull request in
+  // place (src/review.mjs) instead of rebuilding the branch from the base.
+  if (config.factory.resumeFromReview !== undefined && typeof config.factory.resumeFromReview !== "boolean") {
+    errors.push("factory.resumeFromReview must be true or false. With true, re-labelling an issue with an open factory pull request revises that pull request from its review feedback")
+  }
+
   // Every pull request goes to branchPrefix + the issue number. Without the
   // prefix the branch would be "undefined12", a failure that shows up far
   // from this file, so require it here. It also has to survive

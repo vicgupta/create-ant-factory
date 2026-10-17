@@ -36,6 +36,8 @@ The GitHub runner does the orchestration and holds the secrets. The worker sandb
    - a check fails: give the agent one more run with the failure output, then check again. Still failing: needs attention
    - no files changed: needs attention
 7. Commit, push the branch with `--force` (a re-run replaces the old attempt), open or update the PR with `Closes #N` and the agent's summary.
+
+   **Resume-from-review** (`factory.resumeFromReview: true`, `src/review.mjs`): when the branch already has an open PR, the run revises it instead. Step 4 clones that branch rather than the base; the prompt says to revise the earlier attempt and adds the trusted review feedback (reviews, inline comments with file and line, PR conversation, from `allowedActors` and the issue author only, and only what came after the factory's last "Revised after review" reply) and the failing check runs on the PR's head commit, capped to the newest 8000 characters. Step 7 becomes a normal push (no `--force`) of an "Address review feedback" commit; a rejected push hands the issue back instead of overwriting anyone's commits. The factory then replies on the PR with the agent's summary, and step 8 runs as usual. No feedback and no failing checks means needs attention: there is nothing to revise.
 8. On the issue: remove `factory:running`, add `factory:review`, comment with the PR link.
 9. Always, in `finally`: delete the sign-in files and release the worker — with Box, remove the busy label and pause the Box; with Docker, remove the container.
 
