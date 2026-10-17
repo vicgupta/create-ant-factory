@@ -10,7 +10,7 @@
 // seconds earlier and holds nothing. With --keep it is paused instead, and
 // scripts/box-exec.mjs can reach it by its name.
 import { loadConfig } from "../src/config.mjs"
-import { sh, createAgentBox, describeBoxSettings, requireBoxSettings, imageFor, wantsBrowser, hasBrowser, browserMissingHelp } from "../src/box.mjs"
+import { sh, q, createAgentBox, describeBoxSettings, requireBoxSettings, imageFor, wantsBrowser, hasBrowser, browserMissingHelp } from "../src/box.mjs"
 import { signIn, writeJobFiles, runAgent, secretPaths } from "../src/agents.mjs"
 
 const config = loadConfig()
@@ -78,7 +78,8 @@ try {
 } catch (error) {
   console.error(`\n${error.message}`)
 } finally {
-  await sh(box, `rm -rf /workspace/home/smoke ${secretPaths(config).map((p) => `'${p}'`).join(" ")}`, { allowFailure: true }).catch(() => {})
+  // q(), not a hand-written `'${p}'`: a config path with an apostrophe would break the quotes and rm -rf would hit the wrong path.
+  await sh(box, `rm -rf /workspace/home/smoke ${secretPaths(config).map(q).join(" ")}`, { allowFailure: true }).catch(() => {})
   if (keep) {
     await box.pause()
     console.log(`\nPaused Box ${name} (${box.id}). It still counts toward the Box limit.`)
