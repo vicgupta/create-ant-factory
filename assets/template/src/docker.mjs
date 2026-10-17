@@ -308,6 +308,15 @@ export async function removeDockerWorker(handle) {
   if (code !== 0) console.warn(`Could not remove worker container ${name}: ${stderr.trim()}. Remove it with: docker rm -f ${name}`)
 }
 
+// Pure: the parsed `docker ps` rows that belong to one worker. A worker
+// stuck busy under the Docker provider is exactly this list: each row is a
+// container a killed run left behind (scripts/release-worker.mjs removes
+// them; removing a container is the whole cleanup, the workspace and every
+// sign-in file go with it).
+export function containersForWorker(containers, workerId) {
+  return containers.filter((c) => c.labels?.worker === workerId)
+}
+
 // Running factory containers, for workers.mjs. Throws when Docker is
 // unreachable so a run fails loudly instead of double-claiming a worker.
 export async function listDockerWorkers(config) {
