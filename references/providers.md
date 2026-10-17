@@ -1,12 +1,9 @@
-# Worker providers: Box or Docker
+# Worker providers: Docker or Box
 
 A worker is wherever one job's agent actually runs. `worker.provider` in
-`factory.config.json` chooses it. Upstash Box is the default, and nothing
-changes for an existing factory until somebody sets `"docker"`.
-
-```json
-"worker": { "provider": "box" }
-```
+`factory.config.json` chooses it. Docker is the default for new factories:
+free, local, and the code never leaves your machine. Upstash Box remains
+for when you'd rather not run a host at all.
 
 ```json
 "worker": {
@@ -15,20 +12,24 @@ changes for an existing factory until somebody sets `"docker"`.
 }
 ```
 
-| | Box (`"box"`, default) | Docker (`"docker"`) |
-|---|---|---|
-| Where it runs | Upstash's cloud, one named Box per worker | One container per job on a Docker host you control |
-| Idle workers | Paused Boxes (they still count toward the plan limit) | Nothing: no container exists between jobs |
-| Claiming | Box labels (`busy`, `run-<id>`) are the shared state | A running container labelled `worker=<id>` is the busy marker |
-| Worker image | A Box snapshot (`worker/setup.sh` + `build-snapshot.mjs`) | `worker/Dockerfile`, built with `docker build` |
-| Browser | Upstash Chromium, if `factory.browser` is on | No built-in browser; install one in the image if the agent needs it |
-| Cleanup | Sign-in files deleted, Box paused, workspace wiped next job | Container removed (`docker rm -f`) at the end, success or failure — workspace and sign-in files go with it |
-| Best for | Not running a host at all | Your own repos on a machine/VPC you already run, predictable cost, keeping code on your network |
+```json
+"worker": { "provider": "box" }
+```
 
-Pick Box unless there is a reason. Pick Docker when the work must stay on
-your own host or network, or when a paused-Box pool does not fit how you
-want to pay. Do not pick Docker to run other people's code: see the
-isolation caveat below.
+| | Docker (`"docker"`, default) | Box (`"box"`) |
+|---|---|---|
+| Where it runs | One container per job on a Docker host you control | Upstash's cloud, one named Box per worker |
+| Idle workers | Nothing: no container exists between jobs | Paused Boxes (they still count toward the plan limit) |
+| Claiming | A running container labelled `worker=<id>` is the busy marker | Box labels (`busy`, `run-<id>`) are the shared state |
+| Worker image | `worker/Dockerfile`, built with `docker build` | A Box snapshot (`worker/setup.sh` + `build-snapshot.mjs`) |
+| Browser | No built-in browser; install one in the image if the agent needs it | Upstash Chromium, if `factory.browser` is on |
+| Cleanup | Container removed (`docker rm -f`) at the end, success or failure — workspace and sign-in files go with it | Sign-in files deleted, Box paused, workspace wiped next job |
+| Best for | Your own repos on a machine/VPC you already run, predictable cost, keeping code on your network | Not running a host at all |
+
+Pick Docker unless there is a reason. Pick Box when you'd rather not
+run a host at all, or when a paused-Box pool fits how you want to pay
+better than per-job containers. Do not pick Docker to run other people's
+code: see the isolation caveat below.
 
 ## Docker setup
 
