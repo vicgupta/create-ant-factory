@@ -7,12 +7,16 @@
 // The first argument is a worker id, or the full name of another Box of this
 // factory, such as a kept smoke-test Box.
 import { Box } from "@upstash/box"
-import { loadConfig } from "../src/config.mjs"
+import { loadConfig, requireBoxProvider } from "../src/config.mjs"
 import { sh } from "../src/box.mjs"
 import { getWorkerStates } from "../src/workers.mjs"
 
 const [workerId, command, flag] = process.argv.slice(2)
 const config = loadConfig()
+// A debug shell inside a worker's Box. Under the Docker provider there are
+// no Boxes; run the worker image yourself (docker run --rm -it <image> bash)
+// instead of reaching for Upstash with a container name.
+requireBoxProvider(config, "box-exec.mjs")
 if (!workerId || !command) throw new Error('Usage: box-exec.mjs <worker id or Box name> "<command>" [--pause]')
 const worker = (await getWorkerStates(config)).find((w) => w.id === workerId)
 const data = worker?.boxId
