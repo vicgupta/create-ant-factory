@@ -106,3 +106,18 @@ export function capComments(comments, maxChars = MAX_COMMENT_CHARS) {
   }
   return { kept, dropped: comments.length - kept.length }
 }
+
+// The longest agent summary that may become a pull request description.
+// GitHub caps PR bodies at 65,536 characters, and the summary is whatever
+// the agent wrote into summary.md: unbounded. Without a cap, a runaway
+// agent would make the PR creation fail with a 422 after the commit and the
+// push already happened. The cap leaves room for the "Closes #N" line and
+// the footer the factory wraps the summary in.
+export const MAX_PR_BODY_CHARS = 60000
+
+// Keeps the head of the summary — the part the prompt asked for, what the
+// agent changed — and says so, so nothing is trimmed silently.
+export function capSummary(summary, maxChars = MAX_PR_BODY_CHARS) {
+  if (summary.length <= maxChars) return summary
+  return `${summary.slice(0, maxChars).trimEnd()}\n\n(Trimmed to ${maxChars} characters. The agent wrote ${summary.length}.)`
+}
