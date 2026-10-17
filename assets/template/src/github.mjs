@@ -76,3 +76,11 @@ export function trustedComments(comments, { allowedActors = [], issueAuthor } = 
   const trusted = new Set([...allowedActors, issueAuthor].filter(Boolean).map((login) => login.toLowerCase()))
   return comments.filter((c) => c.author && trusted.has(c.author.toLowerCase()))
 }
+
+// The same rule as trustedComments: GitHub logins are case-insensitive. Used
+// by the workflow_dispatch guard in run.mjs, where a differently-cased
+// username in factory.allowedActors used to refuse the manual run.
+export function isAllowedActor(allowedActors, actor) {
+  const who = String(actor ?? "").toLowerCase()
+  return (allowedActors ?? []).some((login) => String(login).toLowerCase() === who)
+}
