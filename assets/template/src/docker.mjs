@@ -317,10 +317,20 @@ export function containersForWorker(containers, workerId) {
   return containers.filter((c) => c.labels?.worker === workerId)
 }
 
-// Running factory containers, for workers.mjs. Throws when Docker is
-// unreachable so a run fails loudly instead of double-claiming a worker.
-export async function listDockerWorkers(config) {
-  const { code, stdout, stderr } = await runDocker(["ps", "--filter", `label=${DOCKER_LABEL}`, "--format", "{{.Names}}\t{{.Status}}\t{{.Labels}}"], { host: config ? dockerHostFor(config) : null })
+// Pure: the `docker ps` arguments that list factory containers. By default
+// only running ones, which is what "busy" means. With all: true (-a) stopped
+// ones too: a job container that exited without being removed (Docker host
+// rebooted, container OOM-killed, runner killed after it stopped) still holds
+// the job's workspace and sign-in files until it is removed.
+export function dockerPsArgs({ all = false } = {}) {
+  return ["ps", ...(all ? ["-a"] : []), "--filter", `label=${DOCKER_LABEL}`, "--format", "{{.Names}}\t{{.Status}}\t{{.Labels}}"]
+}
+
+// Factory containers, for workers.mjs (running only) and release-worker.mjs
+// (all: true). Throws when Docker is unreachable so a run fails loudly
+// instead of double-claiming a worker.
+export async function listDockerWorkers(config, { all = false } = {}) {
+  const { code, stdout, stderr } = await runDocker(dockerPsArgs({ all }), { host: config ? dockerHostFor(config) : null })
   if (code !== 0) throw new Error(`docker ps failed (is the Docker host reachable${process.env.DOCKER_HOST ? ` at DOCKER_HOST=${process.env.DOCKER_HOST}` : ""}?): ${stderr.trim()}`)
   return parseDockerPs(stdout)
 }
