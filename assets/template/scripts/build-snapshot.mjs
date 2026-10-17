@@ -14,7 +14,7 @@
 import { readFileSync, writeFileSync } from "node:fs"
 import { Box } from "@upstash/box"
 import { loadConfig, boxNameFor } from "../src/config.mjs"
-import { sh, runScript, applyBoxSettings, describeBoxSettings, requireBoxSettings, wantsBrowser, hasBrowser } from "../src/box.mjs"
+import { sh, q, runScript, applyBoxSettings, describeBoxSettings, requireBoxSettings, wantsBrowser, hasBrowser } from "../src/box.mjs"
 import { getWorkerStates } from "../src/workers.mjs"
 import { secretPaths } from "../src/agents.mjs"
 
@@ -75,16 +75,17 @@ try {
   // shared image must hold none, or another agent type would inherit them, so
   // the settings files are removed for the snapshot and written back after it.
   const settingsFiles = Object.values(config.agents).flatMap((a) => (Array.isArray(a.boxSettings) ? a.boxSettings.map((x) => x.path) : []))
-  if (shared && settingsFiles.length) await sh(box, `rm -f ${settingsFiles.map((p) => `'${p}'`).join(" ")}`)
+  if (shared && settingsFiles.length) await sh(box, `rm -f ${settingsFiles.map(q).join(" ")}`)
   if (!shared) await applyBoxSettings(box, config, worker.agent)
 
   // Nothing secret and nothing from old jobs may end up in the image.
   // That includes agent transcripts, which hold app code from earlier jobs.
   // jobFiles go too. They are written fresh for every job, and a house rules
   // file that mentions a token prefix as an example would trip the scan below.
-  const jobFileTargets = Object.values(config.agents).flatMap((a) => (a.jobFiles ?? []).map((f) => `'${f.to}'`))
+  const jobFileTargets = Object.values(config.agents).flatMap((a) => (a.jobFiles ?? []).map((f) => q(f.to)))
   const transcripts = [".claude/projects", ".claude/todos", ".claude/shell-snapshots", ".codex/sessions", ".codex/log", ".codex/history.jsonl", ...jobFileTargets, ...(config.factory.imageCleanPaths ?? [])]
-  await sh(box, `cd /workspace/home && rm -rf .image-build work smoke .npm/_logs ${transcripts.join(" ")} ~/.git-credentials ${secretPaths(config).map((p) => `'${p}'`).join(" ")}`)
+  // Paths come from the config and can hold any character (a Windows user syncing a folder, a name with an apostrophe). q() keeps each path one argument; a hand-written `'${p}'` breaks on an embedded quote and rm -rf then hits the wrong path.
+  await sh(box, `cd /workspace/home && rm -rf .image-build work smoke .npm/_logs ${transcripts.join(" ")} ~/.git-credentials ${secretPaths(config).map(q).join(" ")}`)
   console.log("\nRemoved sign-in files and old workspaces.")
 
   // Last line of defence: refuse to snapshot if anything that looks like a
