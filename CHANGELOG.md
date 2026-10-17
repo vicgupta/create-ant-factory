@@ -7,6 +7,20 @@ loosely "Keep a Changelog"; versions are git tags (`0.1`, `0.2`, …).
 
 ### Features
 
+- Scheduled scan template (`factory.scheduledScan`, off for existing configs;
+  the template ships the block with `"enabled": false`). An optional
+  `.github/workflows/scheduled-scan.yml` runs on a weekly cron (and
+  `workflow_dispatch`) and calls `scripts/scheduled-scan.mjs`, which proposes
+  **candidate** issues from TODO/FIXME/XXX/HACK markers under allowlisted
+  paths and/or a `scripts/scan-candidates.json` list. Candidates get
+  `factory:candidate` only — **never** the ready label — and each issue body
+  states that a human still applies ready to start work. Dedupe skips open
+  issues with the same title fingerprint, recently closed ones
+  (`skipClosedDays`, default 30), and duplicates inside one run; `maxPerRun`
+  caps filing. Pure helpers live in `src/scan.mjs` (fingerprint, plan,
+  marker parse, label safety); the loader validates every key.
+  `npm run scheduled-scan` dry-runs by default (`--yes` to create).
+
 - Independent reviewer pass (`factory.reviewer`, off for existing configs;
   the template ships the block with `"enabled": false` because it adds one
   agent run to the timeout budget). After checks pass and the change is

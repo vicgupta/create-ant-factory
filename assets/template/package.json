@@ -15,7 +15,8 @@
     "precedents": "node scripts/precedents.mjs",
     "verify-docker": "node --env-file=.env scripts/verify-docker.mjs",
     "risk-gate": "node scripts/risk-gate.mjs",
-    "review-check": "node scripts/review-check.mjs"
+    "review-check": "node scripts/review-check.mjs",
+    "scheduled-scan": "node scripts/scheduled-scan.mjs"
   },
   "dependencies": {
     "@upstash/box": "^0.7.5"

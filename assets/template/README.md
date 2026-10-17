@@ -73,6 +73,15 @@ itself; you only ever add `ready` (and optionally `agent:<name>`).
   `factory:needs-attention`; the findings are listed in the pull request.
   It adds one agent run per job, so run `node scripts/check-setup.mjs` and
   raise `timeout-minutes` in `.github/workflows/factory.yml` if it asks.
+- Scheduled scan: set `"enabled": true` in the `"scheduledScan"` block of
+  `factory.config.json` (it ships off). The optional
+  `.github/workflows/scheduled-scan.yml` (cron + "Run workflow") walks
+  allowlisted paths for `TODO`/`FIXME`/`XXX`/`HACK` markers and/or reads
+  `scripts/scan-candidates.json`, then files **candidate** issues labelled
+  `factory:candidate`. It never applies `ready` and never starts a run — you
+  still add `ready` yourself after reviewing a candidate. Duplicates (same
+  title fingerprint on an open or recently closed issue) are skipped. Preview
+  locally with `npm run scheduled-scan`; add `--yes` to create.
 - `agent:<name>` — optional. Put this on before `ready` to force a specific
   agent type. The factory reads labels at the moment the run starts.
 
