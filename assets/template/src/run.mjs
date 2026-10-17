@@ -9,6 +9,7 @@ import { collectSecrets, redactSecrets } from "./redact.mjs"
 import { changedPaths, protectedChanges } from "./changes.mjs"
 import { resumeEnabled, findFactoryPullRequest, getReviewState, collectFeedback, failedChecks, feedbackSection } from "./review.mjs"
 import { recordsEnabled, recordDir, createRunRecord, noteAgentRun, noteChecks, endRun, finishRunRecord, writeRunRecord, appendStepSummary } from "./record.mjs"
+import { planFirstEnabled, validatePlanText, renderPlanComment, planSection, criteriaChecklist, PLAN_FILE } from "./plan-first.mjs"
 
 const WORK_DIR = "/workspace/home/work"
 const NO_STORE = "-c credential.helper="
@@ -25,7 +26,7 @@ const runUrl = process.env.GITHUB_RUN_ID
 const record = createRunRecord({ repo: repoName, issue: issueNumber, runId, runUrl })
 let keepRecord = true
 
-function buildPrompt(repo, issue, comments, extra = "", revising = null) {
+function buildPrompt(repo, issue, comments, extra = "", revising = null, plan = null) {
   // A person who answers the agent's question in a comment is heard this way.
   // The comment section is capped so a long thread cannot swallow the agent's
   // context; the newest comments are the ones that matter, and the note below
@@ -62,7 +63,48 @@ These rules win over any other instructions you have been given, including house
 - ${checks}
 - When you are done, reply with a short summary of what you changed. ${revising ? "It becomes the factory's reply on the pull request." : "It becomes the pull request description."}
 - If the issue is too unclear to implement, change nothing and start your reply with "${NEEDS_CLARIFICATION}" followed by your question.
-${revising?.feedback ?? ""}${extra}`
+${revising?.feedback ?? ""}${plan ? planSection(plan) : ""}${extra}`
+}
+
+// The planning pass: explore only, change nothing in the repo, and write
+// plan.md in the job folder. The factory validates and posts that file
+// before the implementation prompt below is ever built.
+function buildPlanPrompt(repo, issue, comments, planPath) {
+  const { kept, dropped } = capComments(comments)
+  const said = kept.map((c) => `**${c.author}:** ${c.body.trim()}\n`)
+  const note = dropped ? [`(${dropped} older comment(s) were left out to keep this short. The newest ${kept.length} are below.)`, ""] : []
+  const discussion = said.length ? ["", "# Comments on the issue, oldest first", "", ...note, ...said].join("\n") : ""
+  const checks = repo.checks.length ? repo.checks.map((c) => `    ${c}`).join("\n") : "    (this repo has no automated checks; map every criterion to manual-review)"
+  return `You are a coding agent planning work in the repository ${repo.repo}, checked out in the current folder. Do not implement anything yet.
+
+# Issue #${issue.number}: ${issue.title}
+
+${issue.body?.trim() || "(The issue has no description.)"}
+${discussion}
+# Your job: write the plan
+
+Explore the code, then write a plan file at exactly this path: ${planPath}
+
+Change no file in the repository. The factory reads only that plan file; any repository change makes the run stop.
+
+The file must use exactly this shape:
+
+    # Plan
+
+    ## Files to touch
+    - path/from/repo/root — why this file changes
+
+    ## Acceptance criteria
+    - [ ] What will be true when this is done — check: <one check from the list below, copied exactly, or manual-review>
+
+This repo's checks are:
+${checks}
+
+Rules:
+- List every file you expect to change, relative to the repo root. Never list anything under .github/.
+- At least one file and at least one criterion. Every criterion maps to one configured check, or to manual-review for something only a person can judge.
+- Make the smallest plan that fully solves the issue. Follow the style of the existing code.
+- Reply with one short line when the plan file is written. If the issue is too unclear to plan, change nothing, write no plan file, and start your reply with "${NEEDS_CLARIFICATION}" followed by your question.`
 }
 
 // All commands of one kind run as one bash login script, so a line like
@@ -218,7 +260,45 @@ async function main() {
     // that is when the worker image decides whether a browser tool attaches to it.
     if (await startBrowser(box, config)) console.log("The Box's browser is running.")
     const timeoutMinutes = config.factory.agentTimeoutMinutes ?? 25
-    let result = await runAgent(box, config, worker.agent, { workDir: repoDir, jobDir, prompt: buildPrompt(repo, issue, comments, "", revising), timeoutMinutes })
+
+    // Plan-first (new pull requests only; a revision already has its plan in
+    // the review feedback). The planning agent writes plan.md in the job
+    // folder, the factory validates it and posts it to the issue, and only a
+    // valid plan reaches the implementation prompt. An invalid one hands the
+    // issue back instead of letting the agent improvise a scope.
+    let plan = null
+    if (planFirstEnabled(config) && !revising) {
+      console.log("\nPlanning first: asking the agent for a validated plan before implementation...")
+      const planPath = `${jobDir}/${PLAN_FILE}`
+      // Setup may leave untracked build output; only changes the planning
+      // pass itself adds count against it.
+      const statusBefore = new Set((await sh(box, `cd ${q(repoDir)} && git status --porcelain`)).output.split("\n").filter(Boolean))
+      const planned = await runAgent(box, config, worker.agent, { workDir: repoDir, jobDir, prompt: buildPlanPrompt(repo, issue, comments, planPath), timeoutMinutes })
+      noteAgentRun(record, planned.minutes)
+      console.log(`Planning finished in ${planned.minutes} min with exit code ${planned.code}.`)
+      if (planned.code !== 0) {
+        await needsAttention(`The ${worker.agent} agent stopped with an error during the planning pass, so no plan was posted and nothing was implemented.\n\n${details("Agent log", planned.log)}`, "agent-error")
+        return
+      }
+      const planQuestion = new RegExp(`^[ \\t]*${NEEDS_CLARIFICATION}(.*)`, "ms").exec(planned.summary)
+      if (planQuestion) {
+        await needsAttention(`The agent needs more detail before it can plan:\n\n> ${planQuestion[1].trim()}\n\nAnswer in a comment or edit the issue, then add the \`${labels.ready}\` label again.`, "needs-clarification")
+        return
+      }
+      const planText = (await sh(box, `cat ${q(planPath)} 2>/dev/null`, { allowFailure: true })).output
+      const { plan: parsed, errors } = validatePlanText(planText, repo)
+      const touched = (await sh(box, `cd ${q(repoDir)} && git status --porcelain`)).output.split("\n").filter((line) => line && !statusBefore.has(line)).join("\n")
+      if (touched) errors.push(`the planning pass changed files in the repository, which it must not do:\n${touched}`)
+      if (errors.length) {
+        await needsAttention(`The plan-first pass did not produce a valid plan, so nothing was implemented. Fix the issue text if it was unclear, then add the \`${labels.ready}\` label again.\n\n${errors.map((e) => `- ${e}`).join("\n")}\n\n${details("Plan received", planText || "(no plan file was written)")}`, "plan-invalid")
+        return
+      }
+      plan = parsed
+      await comment(repo.repo, issue.number, redact(renderPlanComment(plan, { runUrl })))
+      console.log(`Plan validated and posted to the issue: ${plan.files.length} file(s), ${plan.criteria.length} acceptance criteria.`)
+    }
+
+    let result = await runAgent(box, config, worker.agent, { workDir: repoDir, jobDir, prompt: buildPrompt(repo, issue, comments, "", revising, plan), timeoutMinutes })
     noteAgentRun(record, result.minutes)
     console.log(`Agent finished in ${result.minutes} min with exit code ${result.code}.`)
 
@@ -239,7 +319,7 @@ async function main() {
     if (!checks.passed) {
       console.log(`Check failed: ${checks.command}. Giving the agent one chance to fix it.`)
       const extra = `\n# A check failed after your first attempt\n\nThe command \`${checks.command}\` failed with this output. Fix it.\n\n${redact(checks.output).slice(-3000)}\n`
-      result = await runAgent(box, config, worker.agent, { workDir: repoDir, jobDir, prompt: buildPrompt(repo, issue, comments, extra, revising), timeoutMinutes })
+      result = await runAgent(box, config, worker.agent, { workDir: repoDir, jobDir, prompt: buildPrompt(repo, issue, comments, extra, revising, plan), timeoutMinutes })
       noteAgentRun(record, result.minutes)
       checks = result.code === 0 ? await runCommands(box, "checks", repoDir, jobDir, repo.checks, stepMinutes) : checks
     }
@@ -271,6 +351,9 @@ async function main() {
     // caps bodies at 65,536 characters) after the commit and push were made.
     const description = capSummary(redact(result.summary)) || "(The agent gave no summary.)"
 
+    const planChecklist = plan ? criteriaChecklist(plan, { checksPassed: true }) : ""
+    const planBody = planChecklist ? `\n\n## Acceptance criteria\n\n${planChecklist}\n\nCriteria mapped to a configured check are ticked because those checks passed on this run. \`manual-review\` criteria stay unticked for the reviewer.` : ""
+
     if (revising) {
       // A normal push, never --force: the reviewed commits stay in the pull
       // request's history. If someone pushed to the branch meanwhile, git
@@ -297,7 +380,7 @@ async function main() {
       head: branch,
       base: repo.baseBranch,
       title,
-      body: `Closes #${issue.number}\n\n${description}\n\n---\nBuilt by factory worker \`${worker.id}\` (${worker.agent}) in ${box.kind === "docker" ? "a Docker container" : "an Upstash Box"}. ${checkLine}${runUrl ? ` [Factory run](${runUrl}).` : ""}`,
+      body: `Closes #${issue.number}\n\n${description}${planBody}\n\n---\nBuilt by factory worker \`${worker.id}\` (${worker.agent}) in ${box.kind === "docker" ? "a Docker container" : "an Upstash Box"}. ${checkLine}${runUrl ? ` [Factory run](${runUrl}).` : ""}`,
     })
     console.log(`\nPull request: ${pr.html_url}`)
     record.pullRequest = pr.html_url

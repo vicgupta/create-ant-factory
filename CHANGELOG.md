@@ -7,6 +7,17 @@ loosely "Keep a Changelog"; versions are git tags (`0.1`, `0.2`, …).
 
 ### Features
 
+- Plan-first phase (`factory.planFirst`). A separate planning agent run
+  writes `plan.md` (files to touch, acceptance criteria each mapped to a
+  configured check or `manual-review`); the factory validates it
+  (`src/plan-first.mjs`: safe relative files, never `.github/`, no invented
+  check names, caps, no repo changes from the planning pass), posts it to
+  the issue before implementation, and implements from it. The PR body
+  ticks off criteria whose check passed; `manual-review` stays unticked.
+  An invalid plan stops with `factory:needs-attention` / `plan-invalid`
+  and nothing built. Revisions skip planning. Off by default for existing
+  configs; the template turns it on, and `check-setup.mjs` counts the
+  extra agent run in the timeout sum.
 - Run records and a report (`factory.runRecords`, on by default). Every run
   writes `runs/run-<id>.json` (worker, provider, agent, minutes, check
   attempts, files changed, outcome and reason code; never logs or replies),

@@ -8,6 +8,7 @@ import { getWorkerStates, pickWorker } from "./workers.mjs"
 import { workerProvider, workerNoun } from "./config.mjs"
 import { createDockerWorker } from "./docker.mjs"
 import { resumeEnabled, findFactoryPullRequest } from "./review.mjs"
+import { planFirstEnabled } from "./plan-first.mjs"
 
 const [repoName = process.env.FACTORY_REPO, issueNumber = process.env.FACTORY_ISSUE] = process.argv.slice(2)
 if (!repoName || !issueNumber) {
@@ -60,6 +61,7 @@ async function main() {
   } else {
     console.log(`\nPlan: worker ${worker.id} (${worker.agent}) would take this issue in Box ${worker.boxName}.`)
   }
+  if (planFirstEnabled(config)) console.log("Plan-first: on. A planning pass writes plan.md, the factory validates it (files to touch, acceptance criteria mapped to this repo's checks or manual-review) and posts it to the issue before implementation; the pull request ticks off the criteria. Revision runs skip it.")
   const branch = `${config.factory.branchPrefix}${issue.number}`
   const openPr = resumeEnabled(config) ? await findFactoryPullRequest(repo.repo, branch) : null
   if (openPr) console.log(`Mode: revise pull request #${openPr.number} from its review feedback (factory.resumeFromReview). Branch: ${branch}, normal push.`)

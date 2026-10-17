@@ -31,6 +31,18 @@ itself; you only ever add `ready` (and optionally `agent:<name>`).
   review and any failing checks, pushes a normal commit on top, replies on
   the pull request and moves the issue back to `factory:review`. Only
   feedback from `allowedActors` and the issue author is read.
+- Plan first: with `"planFirst": true` in `factory.config.json` (the
+  template's default) a new run starts with a planning pass. The agent
+  writes `plan.md` (files to touch, acceptance criteria each mapped to one
+  of the repo's checks or to `manual-review`), the factory validates it and
+  posts it to the issue *before* anything is implemented, and the
+  implementation works from that plan. An invalid plan stops the run to
+  `factory:needs-attention` (`plan-invalid`) with nothing implemented. The
+  pull request ticks off each criterion whose check passed;
+  `manual-review` criteria stay unticked for you. Revision runs after a
+  review skip planning — the review feedback is their plan. Set
+  `"planFirst": false` to go straight to implementation. Planning costs
+  one extra agent run.
 - `agent:<name>` — optional. Put this on before `ready` to force a specific
   agent type. The factory reads labels at the moment the run starts.
 
