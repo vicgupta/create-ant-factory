@@ -7,6 +7,16 @@ test("redactSecrets replaces every occurrence of every value", () => {
   assert.equal(out, "token *** here and *** again, plus ***")
 })
 
+test("redactSecrets hides the whole of a secret that contains another one", () => {
+  const short = "sk-abcdefgh"
+  const long = "sk-abcdefgh-LONGTAIL99"
+  // Order must not matter: the short value listed first used to leave "-LONGTAIL99" behind.
+  assert.equal(redactSecrets(`key=${long} and ${short}`, [short, long]), "key=*** and ***")
+  assert.equal(redactSecrets(`key=${long} and ${short}`, [long, short]), "key=*** and ***")
+  const authJson = `{"access_token":"${long}"}`
+  assert.equal(redactSecrets(`login ${authJson}`, [long, authJson]), "login ***")
+})
+
 test("redactSecrets leaves text alone when there is nothing to redact", () => {
   assert.equal(redactSecrets("nothing secret here", []), "nothing secret here")
   assert.equal(redactSecrets("nothing secret here", ["xyz"]), "nothing secret here")
