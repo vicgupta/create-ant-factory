@@ -1,7 +1,8 @@
 // Proves one agent type works inside a Box before anything else is built on it.
 // Creates ONE Box, writes the agent type's default settings into it, signs the
 // agent in exactly the way the factory will, and asks it to reply "BOX OK".
-// No repo is touched.
+// No repo is touched. Refuses when worker.provider is "docker": use
+// scripts/verify-docker.mjs there instead.
 //
 // Preview: node --env-file=.env scripts/smoke-test.mjs <agent type>
 // Run:     node --env-file=.env scripts/smoke-test.mjs <agent type> --yes [--keep]
@@ -9,11 +10,14 @@
 // Without --keep the Box is deleted at the end. It was created by this script
 // seconds earlier and holds nothing. With --keep it is paused instead, and
 // scripts/box-exec.mjs can reach it by its name.
-import { loadConfig } from "../src/config.mjs"
+import { loadConfig, requireBoxProvider } from "../src/config.mjs"
 import { sh, q, createAgentBox, describeBoxSettings, requireBoxSettings, imageFor, wantsBrowser, hasBrowser, browserMissingHelp } from "../src/box.mjs"
 import { signIn, writeJobFiles, runAgent, secretPaths } from "../src/agents.mjs"
 
 const config = loadConfig()
+// The Docker factory's equivalent is scripts/verify-docker.mjs (which runs a
+// smoke container). Refuse here instead of creating a real Upstash Box.
+requireBoxProvider(config, "smoke-test.mjs")
 const agentName = process.argv.slice(2).find((a) => !a.startsWith("--"))
 const keep = process.argv.includes("--keep")
 if (!config.agents[agentName]) {
