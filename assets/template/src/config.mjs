@@ -5,6 +5,13 @@ import { pathToFileURL } from "node:url"
 
 const CONFIG_FILE = new URL("../factory.config.json", import.meta.url)
 const MAX_LABEL_LENGTH = 20 // Upstash Box label limit
+// Owner and repo names on GitHub allow only letters, digits, ".", "-" and
+// "_". Anything else would break the places these names are used unquoted:
+// the `run:` block of the workflow install-trigger.mjs generates, and
+// `git remote set-url` in run.mjs. A quote, semicolon or `$(...)` that
+// passes the loose "owner/name" shape would become shell code, so the
+// strict character class is a security check, not pedantry.
+const REPO_NAME = /^[A-Za-z0-9][A-Za-z0-9._-]*\/[A-Za-z0-9][A-Za-z0-9._-]*$/
 
 export function loadConfig(file = CONFIG_FILE) {
   const config = JSON.parse(readFileSync(file, "utf8"))
@@ -37,7 +44,7 @@ export function loadConfig(file = CONFIG_FILE) {
     }
   }
 
-  if (!/^[^/\s]+\/[^/\s]+$/.test(config.factory.repo ?? "") || config.factory.repo.startsWith("OWNER/")) {
+  if (!REPO_NAME.test(config.factory.repo ?? "") || config.factory.repo.startsWith("OWNER/")) {
     errors.push(`factory.repo "${config.factory.repo}" must be the real owner/name of the factory repo`)
   }
   for (const label of [config.factory.boxLabel, config.factory.busyLabel]) {
@@ -116,7 +123,7 @@ export function loadConfig(file = CONFIG_FILE) {
 
   const repoNames = new Set()
   for (const repo of config.repos) {
-    if (!/^[^/\s]+\/[^/\s]+$/.test(repo.repo ?? "") || /^OWNER\//.test(repo.repo ?? "")) errors.push(`repo "${repo.repo}" must be a real owner/name`)
+    if (!REPO_NAME.test(repo.repo ?? "") || /^OWNER\//.test(repo.repo ?? "")) errors.push(`repo "${repo.repo}" must be a real owner/name`)
     if (repoNames.has(repo.repo)) errors.push(`repo "${repo.repo}" is listed twice`)
     repoNames.add(repo.repo)
     if (!repo.baseBranch) errors.push(`repo "${repo.repo}" needs a baseBranch`)
