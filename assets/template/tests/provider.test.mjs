@@ -7,7 +7,7 @@ import { mkdtempSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { loadConfig, workerProvider, dockerConfig } from "../src/config.mjs"
-import { buildDockerRunArgs, buildDockerSmokeArgs, containerNameFor, containersForWorker, createDockerWorker, formatDockerRunCommand, parseDockerInfo, parseDockerPs, parseDockerSystemDf, parseDockerVersion, parseMemoryBytes, summarizeDockerChecks, verifyDocker } from "../src/docker.mjs"
+import { buildDockerRunArgs, buildDockerSmokeArgs, containerNameFor, containersForWorker, createDockerWorker, dockerPsArgs, formatDockerRunCommand, parseDockerInfo, parseDockerPs, parseDockerSystemDf, parseDockerVersion, parseMemoryBytes, summarizeDockerChecks, verifyDocker } from "../src/docker.mjs"
 
 const baseConfig = () => ({
   factory: {
@@ -167,4 +167,19 @@ test("verifyDocker flags a host with less RAM than one container asks for", asyn
 test("summarizeDockerChecks: notes never fail, fails always do", () => {
   assert.equal(summarizeDockerChecks([{ status: "ok" }, { status: "note" }]).ok, true)
   assert.equal(summarizeDockerChecks([{ status: "ok" }, { status: "fail" }]).problems, 1)
+})
+
+test("dockerPsArgs lists running containers by default and stopped ones with all", () => {
+  const running = dockerPsArgs()
+  assert.equal(running[0], "ps")
+  assert.ok(!running.includes("-a"), "busy detection must only see running containers")
+  assert.deepEqual(running.slice(running.indexOf("--filter"), running.indexOf("--filter") + 2), ["--filter", "label=create-ant-factory=true"])
+  const all = dockerPsArgs({ all: true })
+  assert.ok(all.includes("-a"), "release-worker must also see stopped containers")
+  assert.deepEqual(all.filter((a) => a !== "-a"), running)
+})
+
+test("containersForWorker keeps a stopped leftover so release-worker removes it", () => {
+  const rows = parseDockerPs("factory-claude-01-7\tExited (137) 2 hours ago\tcreate-ant-factory=true,worker=claude-01,run-id=7\nfactory-claude-01-9\tUp 1m\tcreate-ant-factory=true,worker=claude-01,run-id=9")
+  assert.deepEqual(containersForWorker(rows, "claude-01").map((c) => c.name), ["factory-claude-01-7", "factory-claude-01-9"])
 })
