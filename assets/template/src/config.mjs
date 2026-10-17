@@ -66,9 +66,18 @@ export function loadConfig(file = CONFIG_FILE) {
 
   // Every pull request goes to branchPrefix + the issue number. Without the
   // prefix the branch would be "undefined12", a failure that shows up far
-  // from this file, so require it here.
+  // from this file, so require it here. It also has to survive
+  // `git checkout -b` in run.mjs, so it must form a legal branch name once
+  // the issue number is appended. Without this check a prefix like
+  // "factory 2/" fails mid-run, after a worker was already claimed. The
+  // prefix on its own may end with "/" ("factory/" is a fine prefix): the
+  // check runs on a sample branch name, not the bare prefix.
   if (typeof config.factory.branchPrefix !== "string" || !config.factory.branchPrefix) {
     errors.push('factory.branchPrefix must be a non-empty string, for example "factory/issue-"')
+  } else if (!isValidBranchPrefix(config.factory.branchPrefix)) {
+    errors.push(
+      `factory.branchPrefix "${config.factory.branchPrefix}" is not usable in a git branch name. Keep letters, digits, "-", "_" and "/", and do not use spaces or any of ~ ^ : ? * [ \\, ".." or "@{"`,
+    )
   }
 
   // Every worker Box (and Docker container) is named boxNamePrefix + worker id,
@@ -164,6 +173,22 @@ export function loadConfig(file = CONFIG_FILE) {
 
   if (errors.length) throw new Error(`factory.config.json:\n  - ${errors.join("\n  - ")}`)
   return config
+}
+
+// Git branch names follow git check-ref-format. The issue number is appended
+// to the prefix, so the check runs on a sample branch name instead of the
+// bare prefix: "factory/" alone is not a name, but "factory/12" is fine.
+export function isValidBranchPrefix(prefix) {
+  const name = `${prefix}0`
+  if (name === "@") return false
+  if (name.startsWith("/") || name.endsWith("/") || name.endsWith(".")) return false
+  if (name.includes("..") || name.includes("@{")) return false
+  // No control characters, spaces, or ~ ^ : ? * [ \
+  if (/[\x00-\x20\x7f~^:?*[\]\\]/.test(name)) return false
+  for (const component of name.split("/")) {
+    if (component === "" || component.startsWith(".") || component.endsWith(".lock")) return false
+  }
+  return true
 }
 
 // Which worker provider runs jobs. Upstash Box is the default so existing
