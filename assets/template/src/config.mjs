@@ -152,6 +152,16 @@ export function loadConfig(file = CONFIG_FILE) {
     repo.setup ??= []
     repo.checks ??= []
     repo.exclude ??= []
+    // A plain string such as "setup": "npm ci" is an easy slip. It would only
+    // fail inside a claimed worker, after the clone: run.mjs walks the string
+    // one character at a time and then crashes on commands.flatMap, and
+    // plan.mjs crashes on .join. So each of these must be a list of strings.
+    for (const key of ["setup", "checks", "exclude"]) {
+      const list = repo[key]
+      if (!Array.isArray(list) || list.some((item) => typeof item !== "string" || !item.trim())) {
+        errors.push(`repo "${repo.repo}": ${key} must be a list of non-empty strings, for example ${key === "exclude" ? '[".venv/"]' : '["npm ci"]'}, not ${JSON.stringify(list)}`)
+      }
+    }
     for (const entry of repo.secrets ?? []) {
       if (!entry.secret || !entry.env) errors.push(`repo "${repo.repo}": each secrets entry needs a secret (its name in .env and GitHub) and an env (the variable the repo expects)`)
       else if (!isEnvName(entry.env)) errors.push(`repo "${repo.repo}": secrets env "${entry.env}" must be a shell variable name (letters, digits and "_", not starting with a digit)`)
