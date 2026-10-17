@@ -4,7 +4,9 @@
 //
 // With the Docker worker provider there is no Box: a stuck busy worker is a
 // leftover container from a killed run, and removing it is the whole cleanup
-// (the workspace and every sign-in file go with it).
+// (the workspace and every sign-in file go with it). Stopped containers are
+// removed too: one that exited without being removed (host reboot, OOM kill)
+// no longer marks the worker busy but still holds the job's sign-in files.
 //
 // Run with: node --env-file=.env scripts/release-worker.mjs <worker id>
 import { Box } from "@upstash/box"
@@ -20,15 +22,15 @@ const workerId = process.argv[2]
 if (workerProvider(config) === "docker") {
   const worker = (await getWorkerStates(config)).find((w) => w.id === workerId)
   if (!worker) throw new Error("Usage: release-worker.mjs <worker id>")
-  const stuck = containersForWorker(await listDockerWorkers(config), worker.id)
+  const stuck = containersForWorker(await listDockerWorkers(config, { all: true }), worker.id)
   if (stuck.length === 0) {
-    console.log(`No factory containers are running for worker ${worker.id}. Nothing to release.`)
+    console.log(`No factory containers, running or stopped, exist for worker ${worker.id}. Nothing to release.`)
     process.exit(0)
   }
   const host = dockerHostFor(config)
   for (const container of stuck) {
     await removeDockerWorker(dockerHandle(container.name, host))
-    console.log(`Removed stuck container ${container.name} (${container.status})`)
+    console.log(`Removed leftover container ${container.name} (${container.status})`)
   }
   console.log(`Worker ${worker.id} is free.`)
   process.exit(0)
