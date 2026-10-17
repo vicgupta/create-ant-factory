@@ -13,6 +13,9 @@ The Box image configures git with `credential.helper = store`. A clone from a UR
 **A snapshot captures whatever is on the disk, secrets included.**
 The first worker image contained `~/.git-credentials`. `build-snapshot.mjs` now deletes known secret paths and then greps the disk for secret-looking text, and refuses to snapshot if anything is found. If you add an agent whose credentials look different, add a pattern to `factory.secretScanPatterns`. Those patterns are added to the built-in list, they do not replace it. If a bad snapshot was taken, delete it and rebuild.
 
+**The cleanup that deletes secrets must quote paths with `q()`.**
+A hand-written `'${p}'` breaks on a path with an apostrophe (`'/a'b'` becomes `/ab`), so `rm -rf` misses the secret file or hits the wrong path. `build-snapshot.mjs` and `smoke-test.mjs` quote every config path with the `q()` helper from `src/box.mjs`, the same helper `run.mjs` uses for the same cleanup.
+
 **A paused Box keeps its disk.**
 Sign-in files written for a job are still there after the pause. The template deletes them in `finally`. Keep it that way. A cancelled run never reaches `finally`, so `release-worker.mjs` deletes them too.
 
