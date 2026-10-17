@@ -15,14 +15,34 @@ permissions:
 
 jobs:
   notify:
-    # Only people on this list may start the factory. Anyone else who can label
-    # issues would otherwise be able to spend your agent subscription.
     if: >-
       github.event.label.name == '__READY_LABEL__' &&
-      github.event.issue.state == 'open' &&
-      contains(fromJSON('__ALLOWED_ACTORS_JSON__'), github.actor)
+      github.event.issue.state == 'open'
     runs-on: ubuntu-latest
     steps:
+      # Only people on this list may start the factory. Anyone else who can
+      # label issues would otherwise be able to spend your agent subscription.
+      #
+      # GitHub's workflow expressions have no lowercase(), so the
+      # case-insensitive comparison the factory uses everywhere else
+      # (src/run.mjs, src/github.mjs) happens here in Node: a mixed-case
+      # allowedActors entry like "Vic" used to make the trigger silently skip
+      # for that person while a manual run worked. A refused actor now fails
+      # this step with a message instead of the job silently skipping.
+      - name: Check the actor may start the factory
+        env:
+          ALLOWED_ACTORS: '__ALLOWED_ACTORS_JSON__'
+          ACTOR: ${{ github.actor }}
+        run: |
+          node <<'EOF'
+          const allowed = JSON.parse(process.env.ALLOWED_ACTORS).map((a) => a.toLowerCase())
+          const actor = String(process.env.ACTOR).toLowerCase()
+          if (!allowed.includes(actor)) {
+            console.error(`${process.env.ACTOR} is not in factory.allowedActors, so this run is refused.`)
+            process.exit(1)
+          }
+          console.log(`${process.env.ACTOR} may start the factory.`)
+          EOF
       - name: Start the factory
         env:
           GH_TOKEN: ${{ secrets.FACTORY_GITHUB_TOKEN }}
