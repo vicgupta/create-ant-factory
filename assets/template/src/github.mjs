@@ -6,23 +6,63 @@ const API = "https://api.github.com"
 // comments can be told apart from a person's, even when both use one account.
 const FACTORY_MARK = "<!-- software-factory -->"
 
+// A factory run makes a dozen or more GitHub calls in a row (issue, labels,
+// comments, pull request). One transient failure in the middle — a 429 rate
+// limit, a 502 from a bad gateway — used to throw and kill the whole run,
+// after a worker had already been claimed. So the call below is retried.
+const MAX_GITHUB_ATTEMPTS = 4
+const RETRYABLE_METHODS = new Set(["GET", "DELETE"])
+
+// Whether a failed call may be tried again. A 429 means GitHub refused to run
+// the request at all (rate limit), so retrying it cannot double-apply
+// anything. A 5xx may have run server-side, so only the idempotent methods
+// are retried: retrying a POST comment that actually landed would post it
+// twice. 4xx errors are the caller's fault and are never retried.
+export function shouldRetryGitHubCall(method, status, attempt) {
+  if (attempt >= MAX_GITHUB_ATTEMPTS) return false
+  if (status === 429) return true
+  return status >= 500 && status <= 599 && RETRYABLE_METHODS.has(method)
+}
+
+// How long to wait before the next attempt, in milliseconds. GitHub's
+// retry-after header (seconds) wins when it is there; otherwise the wait
+// doubles with the attempt (about 1s, 2s, 4s) plus a little jitter, so two
+// runs hitting the same limit do not retry in lockstep.
+export function retryDelayMs(response, attempt) {
+  const header = response.headers.get("retry-after")
+  const fromHeader = Number(header)
+  if (header !== null && Number.isFinite(fromHeader) && fromHeader >= 0) return fromHeader * 1000
+  return Math.min(30_000, 1000 * 2 ** (attempt - 1)) + Math.floor(Math.random() * 500)
+}
+
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
+
 export async function github(path, { method = "GET", body } = {}) {
   const token = process.env.FACTORY_GITHUB_TOKEN
   if (!token) throw new Error("FACTORY_GITHUB_TOKEN is not set")
 
-  const response = await fetch(`${API}${path}`, {
-    method,
-    headers: {
-      Authorization: `Bearer ${token}`,
-      Accept: "application/vnd.github+json",
-      "X-GitHub-Api-Version": "2022-11-28",
-    },
-    body: body ? JSON.stringify(body) : undefined,
-  })
-  if (!response.ok) {
-    throw new Error(`GitHub ${method} ${path} failed: ${response.status} ${await response.text()}`)
+  for (let attempt = 1; ; attempt++) {
+    const response = await fetch(`${API}${path}`, {
+      method,
+      headers: {
+        Authorization: `Bearer ${token}`,
+        Accept: "application/vnd.github+json",
+        "X-GitHub-Api-Version": "2022-11-28",
+      },
+      body: body ? JSON.stringify(body) : undefined,
+    })
+    if (response.ok) {
+      return response.status === 204 ? null : response.json()
+    }
+    if (!shouldRetryGitHubCall(method, response.status, attempt)) {
+      throw new Error(`GitHub ${method} ${path} failed: ${response.status} ${await response.text()}`)
+    }
+    const waitMs = retryDelayMs(response, attempt)
+    console.warn(
+      `GitHub ${method} ${path} got ${response.status}; retrying in ${(waitMs / 1000).toFixed(1)}s (attempt ${attempt + 1} of ${MAX_GITHUB_ATTEMPTS}).`,
+    )
+    await sleep(waitMs)
   }
-  return response.status === 204 ? null : response.json()
 }
 
 export const getIssue = (repo, number) => github(`/repos/${repo}/issues/${number}`)
