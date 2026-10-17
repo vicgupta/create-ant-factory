@@ -2,10 +2,11 @@
 //
 // Run with: node --env-file=.env src/run.mjs owner/app-repo 12
 import { loadConfig, findRepo } from "./config.mjs"
-import { getIssue, getHumanComments, trustedComments, isAllowedActor, capComments, addLabels, removeLabel, comment, openPullRequest } from "./github.mjs"
+import { getIssue, getHumanComments, trustedComments, isAllowedActor, capComments, capSummary, addLabels, removeLabel, comment, openPullRequest } from "./github.mjs"
 import { claimWorker, releaseWorker, sh, q, runScript, startBrowser } from "./box.mjs"
 import { signIn, writeJobFiles, writeRepoEnv, runAgent, secretPaths, REPO_ENV_FILE } from "./agents.mjs"
 import { collectSecrets, redactSecrets } from "./redact.mjs"
+import { changedPaths, protectedChanges } from "./changes.mjs"
 
 const WORK_DIR = "/workspace/home/work"
 const NO_STORE = "-c credential.helper="
@@ -204,17 +205,29 @@ async function main() {
       return
     }
     console.log(`\nChanged files:\n${status}`)
+    // --no-renames lists a moved file under both its old and new path, so a
+    // workflow moved out of .github/ is caught too.
+    const staged = changedPaths((await sh(box, `cd ${q(repoDir)} && git diff --cached --name-only --no-renames`)).output)
+    const blocked = protectedChanges(staged)
+    if (blocked.length) {
+      await needsAttention(`The agent changed files in \`.github/\`, which the factory never pushes, so no pull request was opened:\n\n${blocked.map((path) => `- \`${path}\``).join("\n")}\n\nIf the issue really needs a workflow change, make that change by hand.`)
+      return
+    }
 
     const title = issue.title
     await sh(box, `cd ${q(repoDir)} && git commit --quiet -m ${q(`${title}\n\nCloses #${issue.number}`)}`)
     await sh(box, `cd ${q(repoDir)} && git ${NO_STORE} push --quiet --force ${q(authedUrl)} ${q(`${branch}:${branch}`)}`)
 
     const checkLine = repo.checks.length ? `Checks passed: ${repo.checks.map((c) => `\`${c}\``).join(", ")}.` : "This repo has no automated checks."
+    // The summary is whatever the agent wrote into summary.md: unbounded.
+    // Without the cap, a runaway reply would fail the PR creation (GitHub
+    // caps bodies at 65,536 characters) after the commit and push were made.
+    const description = capSummary(redact(result.summary)) || "(The agent gave no summary.)"
     const pr = await openPullRequest(repo.repo, {
       head: branch,
       base: repo.baseBranch,
       title,
-      body: `Closes #${issue.number}\n\n${redact(result.summary) || "(The agent gave no summary.)"}\n\n---\nBuilt by factory worker \`${worker.id}\` (${worker.agent}) in ${box.kind === "docker" ? "a Docker container" : "an Upstash Box"}. ${checkLine}${runUrl ? ` [Factory run](${runUrl}).` : ""}`,
+      body: `Closes #${issue.number}\n\n${description}\n\n---\nBuilt by factory worker \`${worker.id}\` (${worker.agent}) in ${box.kind === "docker" ? "a Docker container" : "an Upstash Box"}. ${checkLine}${runUrl ? ` [Factory run](${runUrl}).` : ""}`,
     })
     console.log(`\nPull request: ${pr.html_url}`)
 
