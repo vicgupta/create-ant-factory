@@ -2,7 +2,7 @@
 // Run with: npm test   (node --test tests/)
 import { test } from "node:test"
 import assert from "node:assert/strict"
-import { trustedComments, getHumanComments, capComments, MAX_COMMENT_CHARS } from "../src/github.mjs"
+import { trustedComments, getHumanComments, capComments, capSummary, MAX_COMMENT_CHARS, MAX_PR_BODY_CHARS } from "../src/github.mjs"
 
 const comments = [
   { author: "owner", body: "Use the blue button." },
@@ -86,4 +86,21 @@ test("the newest comment is always kept, even when it alone exceeds the budget",
 
 test("an empty thread caps to nothing", () => {
   assert.deepEqual(capComments([]), { kept: [], dropped: 0 })
+})
+
+test("a summary within the cap passes through unchanged", () => {
+  assert.equal(capSummary("Fixed it."), "Fixed it.")
+  assert.equal(capSummary("x".repeat(MAX_PR_BODY_CHARS)), "x".repeat(MAX_PR_BODY_CHARS))
+})
+
+test("a runaway summary is trimmed at the head and the trim is noted", () => {
+  const long = `Changed three files.\n${"y".repeat(MAX_PR_BODY_CHARS + 100)}`
+  const capped = capSummary(long)
+  assert.ok(capped.startsWith("Changed three files."), "keeps the head, which holds the summary")
+  assert.ok(capped.length < long.length, "is shorter than the runaway reply")
+  assert.ok(capped.endsWith(`(Trimmed to ${MAX_PR_BODY_CHARS} characters. The agent wrote ${long.length}.)`))
+})
+
+test("an empty summary stays empty, so the fallback still applies", () => {
+  assert.equal(capSummary(""), "")
 })
