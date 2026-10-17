@@ -255,6 +255,22 @@ export function workerProvider(config) {
   return config.worker?.provider ?? "box"
 }
 
+// Box-lifecycle scripts (provision-workers, delete-workers, smoke-test)
+// create, delete or inspect Upstash Boxes. Under the Docker provider there are
+// no Boxes: one container is created per job and removed when the job ends.
+// Running one of those scripts in a Docker factory would create real Upstash
+// Boxes (billed on the plan) that the factory never uses, so the scripts call
+// this first and refuse with the Docker equivalent instead of doing the wrong
+// thing quietly. Old factories with no "worker" section keep the "box"
+// fallback in workerProvider, so they are unaffected.
+export function requireBoxProvider(config, scriptName) {
+  if (workerProvider(config) === "box") return
+  throw new Error(
+    `worker.provider is "docker", so ${scriptName} has nothing to do: it manages Upstash Boxes, and this factory has none. ` +
+      `A Docker factory creates one container per job and removes it when the job ends; verify the Docker target with "node scripts/verify-docker.mjs" instead.`,
+  )
+}
+
 export const DOCKER_DEFAULTS = { image: "create-ant-factory-worker:latest", cpus: "2", memory: "4g" }
 
 // Docker settings with defaults filled in. `host` is optional: when set it
