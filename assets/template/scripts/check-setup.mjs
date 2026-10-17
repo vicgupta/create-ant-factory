@@ -108,12 +108,13 @@ if (config) {
 
   console.log("\nTimeouts")
   const f = config.factory
-  const worst = (f.waitForWorkerMinutes ?? 30) + 3 * (f.commandTimeoutMinutes ?? 20) + 2 * (f.agentTimeoutMinutes ?? 25)
+  const agentRuns = f.planFirst === true ? 3 : 2
+  const worst = (f.waitForWorkerMinutes ?? 30) + 3 * (f.commandTimeoutMinutes ?? 20) + agentRuns * (f.agentTimeoutMinutes ?? 25)
   let workflowLimit = null
   try {
     workflowLimit = Number(/timeout-minutes:\s*(\d+)/.exec(readFileSync(new URL("../.github/workflows/factory.yml", import.meta.url), "utf8"))?.[1])
   } catch {}
-  const sum = `worst case for one run: wait ${f.waitForWorkerMinutes ?? 30} + setup and two rounds of checks 3 x ${f.commandTimeoutMinutes ?? 20} + two agent runs 2 x ${f.agentTimeoutMinutes ?? 25} = ${worst} min`
+  const sum = `worst case for one run: wait ${f.waitForWorkerMinutes ?? 30} + setup and two rounds of checks 3 x ${f.commandTimeoutMinutes ?? 20} + ${agentRuns} agent runs ${agentRuns} x ${f.agentTimeoutMinutes ?? 25} = ${worst} min${f.planFirst === true ? " (plan-first adds the planning run)" : ""}`
   if (!workflowLimit) note(`${sum}. Could not read timeout-minutes from the workflow`)
   else if (worst + 10 > workflowLimit) bad(`${sum}, but the workflow stops at ${workflowLimit}. A run killed by that limit skips its cleanup and leaves the worker busy. Raise timeout-minutes or lower the config timeouts`)
   else ok(`${sum}, inside the workflow's ${workflowLimit}`)

@@ -29,7 +29,8 @@ jobs:
   work:
     runs-on: ubuntu-latest
     # Must stay above the worst case in factory.config.json: waiting for a worker,
-    # setup, two agent runs and two rounds of checks. scripts/check-setup.mjs
+    # setup, two agent runs (three with factory.planFirst) and two rounds of
+    # checks. scripts/check-setup.mjs
     # does the sum. A run that hits this limit skips its cleanup.
     timeout-minutes: 150
     env:

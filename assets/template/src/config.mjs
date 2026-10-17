@@ -105,6 +105,13 @@ export function loadConfig(file = CONFIG_FILE) {
     errors.push("factory.resumeFromReview must be true or false. With true, re-labelling an issue with an open factory pull request revises that pull request from its review feedback")
   }
 
+  // Left out means false. With it on, a planning agent run writes plan.md,
+  // the factory validates and posts it to the issue, and only then does the
+  // implementation run start from it (src/plan-first.mjs).
+  if (config.factory.planFirst !== undefined && typeof config.factory.planFirst !== "boolean") {
+    errors.push("factory.planFirst must be true or false. With true, a validated plan is posted to the issue before implementation and the pull request ticks off its acceptance criteria")
+  }
+
   // Left out means true. Each run writes runs/run-<id>.json (src/record.mjs),
   // which the workflow uploads and scripts/report.mjs aggregates.
   if (config.factory.runRecords !== undefined && typeof config.factory.runRecords !== "boolean") {
