@@ -44,6 +44,22 @@ export function loadConfig(file = CONFIG_FILE) {
     errors.push('factory.browser must be true or false. It gives every Box browser access, and the default is true')
   }
 
+  // Every pull request goes to branchPrefix + the issue number. Without the
+  // prefix the branch would be "undefined12", a failure that shows up far
+  // from this file, so require it here.
+  if (typeof config.factory.branchPrefix !== "string" || !config.factory.branchPrefix) {
+    errors.push('factory.branchPrefix must be a non-empty string, for example "factory/issue-"')
+  }
+
+  // A zero, negative or non-numeric timeout also fails far from the cause:
+  // an instantly-dead worker deadline, or a runScript that throws at once.
+  for (const key of ["waitForWorkerMinutes", "agentTimeoutMinutes", "commandTimeoutMinutes", "imageBuildTimeoutMinutes"]) {
+    const value = config.factory[key]
+    if (value !== undefined && (typeof value !== "number" || !Number.isFinite(value) || value <= 0)) {
+      errors.push(`factory.${key} must be a positive number of minutes, not ${JSON.stringify(value)}`)
+    }
+  }
+
   for (const [name, agent] of Object.entries(config.agents)) {
     // Box labels are at most 20 characters, and each Box gets "agent-<name>".
     if (!/^[a-z0-9-]{1,14}$/.test(name)) errors.push(`agent name "${name}" must be 1-14 lowercase letters, digits or dashes`)
