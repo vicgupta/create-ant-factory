@@ -71,6 +71,15 @@ export function loadConfig(file = CONFIG_FILE) {
     errors.push('factory.branchPrefix must be a non-empty string, for example "factory/issue-"')
   }
 
+  // Every worker Box (and Docker container) is named boxNamePrefix + worker id,
+  // and check-setup flags any Box whose name starts with the prefix as a clash.
+  // Left out, workers become "undefinedclaude-01"; left empty, every Box on the
+  // account looks like a clash. Letters, digits, ".", "_" and "-" are safe for
+  // both Upstash Box and Docker container names.
+  if (typeof config.factory.boxNamePrefix !== "string" || !/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(config.factory.boxNamePrefix)) {
+    errors.push(`factory.boxNamePrefix must be a non-empty name such as "factory-" (letters, digits, ".", "_" or "-", starting with a letter or digit), not ${JSON.stringify(config.factory.boxNamePrefix)}`)
+  }
+
   // A zero, negative or non-numeric timeout also fails far from the cause:
   // an instantly-dead worker deadline, or a runScript that throws at once.
   for (const key of ["waitForWorkerMinutes", "agentTimeoutMinutes", "commandTimeoutMinutes", "imageBuildTimeoutMinutes"]) {

@@ -1,4 +1,4 @@
-// Config validation: the branch prefix and the factory timeouts. Pure logic,
+// Config validation: the branch and Box name prefixes and the factory timeouts. Pure logic,
 // no network. Run with: npm test   (node --test tests/)
 import { test } from "node:test"
 import assert from "node:assert/strict"
@@ -60,3 +60,22 @@ for (const key of ["waitForWorkerMinutes", "agentTimeoutMinutes", "commandTimeou
     assert.doesNotThrow(() => load({ [key]: 1.5 }))
   })
 }
+
+test("a missing boxNamePrefix is rejected", () => {
+  assert.throws(() => load({ boxNamePrefix: undefined }), /factory\.boxNamePrefix must be a non-empty name/)
+})
+
+test("an empty boxNamePrefix is rejected", () => {
+  assert.throws(() => load({ boxNamePrefix: "" }), /factory\.boxNamePrefix/)
+})
+
+test("a boxNamePrefix with spaces or slashes is rejected", () => {
+  assert.throws(() => load({ boxNamePrefix: "my factory-" }), /factory\.boxNamePrefix/)
+  assert.throws(() => load({ boxNamePrefix: "team/factory-" }), /factory\.boxNamePrefix/)
+})
+
+test("ordinary boxNamePrefix values load", () => {
+  for (const boxNamePrefix of ["factory-", "acme_factory.", "f1-"]) {
+    assert.equal(load({ boxNamePrefix }).factory.boxNamePrefix, boxNamePrefix)
+  }
+})

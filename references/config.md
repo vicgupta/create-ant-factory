@@ -7,7 +7,7 @@ Every key, what it does, and whether it is required. `src/config.mjs` validates 
 | Key | Required | Meaning |
 |---|---|---|
 | `repo` | yes | `owner/name` of the factory repo. The trigger workflows send their event here. |
-| `boxNamePrefix` | yes | Every Box is named `<prefix><worker id>`. Pick one nothing else on the Upstash account uses. |
+| `boxNamePrefix` | yes | Every Box is named `<prefix><worker id>`. Pick one nothing else on the Upstash account uses. Letters, digits, `.`, `_` and `-`, starting with a letter or digit; the loader rejects anything else. |
 | `boxLabel` | yes | Label on every Box of this factory. At most 20 characters. The factory only ever lists Boxes with this label. |
 | `busyLabel` | yes | Label a Box carries while it works on an issue. |
 | `branchPrefix` | yes | Branches are `<prefix><issue number>`, for example `factory/issue-12`. Must be a non-empty string, or the loader refuses the config. |
