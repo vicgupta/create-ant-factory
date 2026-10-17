@@ -60,3 +60,10 @@ for (const key of ["waitForWorkerMinutes", "agentTimeoutMinutes", "commandTimeou
     assert.doesNotThrow(() => load({ [key]: 1.5 }))
   })
 }
+
+test("allowedActors entries must look like GitHub usernames", () => {
+  load({ allowedActors: ["vicgupta", "octo-org"] }) // letters, digits and hyphens are fine
+  for (const bad of ["vic gupta", "@vicgupta", "vic'gupta", "vic_gupta", "", 42]) {
+    assert.throws(() => load({ allowedActors: ["vicgupta", bad] }), /factory\.allowedActors has .* which is not a GitHub username/, JSON.stringify(bad))
+  }
+})
