@@ -3,6 +3,9 @@
   "private": true,
   "type": "module",
   "description": "Turns ready GitHub issues into pull requests with coding agents in Upstash Boxes",
+  "engines": {
+    "node": ">=20.6.0"
+  },
   "scripts": {
     "status": "node --env-file=.env scripts/status.mjs",
     "plan": "node --env-file=.env src/plan.mjs",
