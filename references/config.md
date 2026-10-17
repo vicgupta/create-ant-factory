@@ -67,7 +67,7 @@ All `setup` commands run as one bash login script, and so do all `checks`. State
 
 | Key | Required | Meaning |
 |---|---|---|
-| `provider` | no | `"box"` (default; Upstash Boxes) or `"docker"` (one container per job on your own Docker host). See `providers.md`. |
+| `provider` | no | `"docker"` (default; one container per job on your own Docker host) or `"box"` (Upstash Boxes). See `providers.md`. |
 | `docker.image` | no | Worker image for the Docker provider. Default `create-ant-factory-worker:latest`, built from `worker/Dockerfile`. |
 | `docker.cpus`, `docker.memory` | no | Per-container limits for the Docker provider (`--cpus` / `--memory`). Defaults `"2"` and `"4g"`. |
 | `docker.host` | no | One Docker endpoint (`-H`), for example `"tcp://10.0.1.20:2376"`. Wins over `DOCKER_HOST`. Left out: `DOCKER_HOST` / docker context decides. Verification (`check-setup`, `scripts/verify-docker.mjs`) reports against this target. |
