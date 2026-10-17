@@ -2,7 +2,7 @@
 // Run with: npm test   (node --test tests/)
 import { test } from "node:test"
 import assert from "node:assert/strict"
-import { trustedComments, getHumanComments } from "../src/github.mjs"
+import { trustedComments, getHumanComments, capComments, MAX_COMMENT_CHARS } from "../src/github.mjs"
 
 const comments = [
   { author: "owner", body: "Use the blue button." },
@@ -61,4 +61,29 @@ test("every page of comments is read, so the newest answer is not dropped", asyn
   assert.equal(comments.at(-1).body, "comment 230")
   assert.equal(comments[0].author, "owner")
   assert.ok(!comments.some((c) => c.body.includes("software-factory")))
+})
+
+test("short threads keep every comment and drop none", () => {
+  const { kept, dropped } = capComments(comments)
+  assert.deepEqual(kept, comments)
+  assert.equal(dropped, 0)
+})
+
+test("over the budget, the newest comments are kept and the oldest dropped", () => {
+  const thread = Array.from({ length: 10 }, (_, i) => ({ author: "a", body: `comment ${i} ` + "x".repeat(99) }))
+  const { kept, dropped } = capComments(thread, 500)
+  assert.ok(kept.length >= 1 && kept.length < thread.length)
+  assert.deepEqual(kept.map((c) => c.body), thread.slice(thread.length - kept.length).map((c) => c.body))
+  assert.equal(dropped, thread.length - kept.length)
+})
+
+test("the newest comment is always kept, even when it alone exceeds the budget", () => {
+  const { kept, dropped } = capComments([{ author: "a", body: "old" }, { author: "b", body: "y".repeat(MAX_COMMENT_CHARS + 1) }])
+  assert.equal(kept.length, 1)
+  assert.equal(kept[0].author, "b")
+  assert.equal(dropped, 1)
+})
+
+test("an empty thread caps to nothing", () => {
+  assert.deepEqual(capComments([]), { kept: [], dropped: 0 })
 })

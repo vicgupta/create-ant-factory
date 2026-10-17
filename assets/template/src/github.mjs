@@ -84,3 +84,25 @@ export function isAllowedActor(allowedActors, actor) {
   const who = String(actor ?? "").toLowerCase()
   return (allowedActors ?? []).some((login) => String(login).toLowerCase() === who)
 }
+
+// The longest comment section the agent's prompt may hold. A long discussion
+// thread could otherwise swallow the agent's context window, so the factory
+// keeps the newest comments up to this many characters. The issue body is
+// never cut: it is the task itself.
+export const MAX_COMMENT_CHARS = 8000
+
+// Keeps the newest comments up to maxChars, oldest first, and reports how
+// many older ones were dropped. The newest comment is always kept, even when
+// it alone is longer than the budget.
+export function capComments(comments, maxChars = MAX_COMMENT_CHARS) {
+  const kept = []
+  let chars = 0
+  for (let i = comments.length - 1; i >= 0; i--) {
+    const comment = comments[i]
+    const size = (comment.author?.length ?? 0) + (comment.body?.length ?? 0) + 8
+    if (kept.length && chars + size > maxChars) break
+    kept.unshift(comment)
+    chars += size
+  }
+  return { kept, dropped: comments.length - kept.length }
+}
