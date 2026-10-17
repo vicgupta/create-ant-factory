@@ -6,6 +6,7 @@ import { getIssue, getHumanComments, trustedComments, isAllowedActor, capComment
 import { claimWorker, releaseWorker, sh, q, runScript, startBrowser } from "./box.mjs"
 import { signIn, writeJobFiles, writeRepoEnv, runAgent, secretPaths, REPO_ENV_FILE } from "./agents.mjs"
 import { collectSecrets, redactSecrets } from "./redact.mjs"
+import { changedPaths, protectedChanges } from "./changes.mjs"
 
 const WORK_DIR = "/workspace/home/work"
 const NO_STORE = "-c credential.helper="
@@ -204,6 +205,14 @@ async function main() {
       return
     }
     console.log(`\nChanged files:\n${status}`)
+    // --no-renames lists a moved file under both its old and new path, so a
+    // workflow moved out of .github/ is caught too.
+    const staged = changedPaths((await sh(box, `cd ${q(repoDir)} && git diff --cached --name-only --no-renames`)).output)
+    const blocked = protectedChanges(staged)
+    if (blocked.length) {
+      await needsAttention(`The agent changed files in \`.github/\`, which the factory never pushes, so no pull request was opened:\n\n${blocked.map((path) => `- \`${path}\``).join("\n")}\n\nIf the issue really needs a workflow change, make that change by hand.`)
+      return
+    }
 
     const title = issue.title
     await sh(box, `cd ${q(repoDir)} && git commit --quiet -m ${q(`${title}\n\nCloses #${issue.number}`)}`)
