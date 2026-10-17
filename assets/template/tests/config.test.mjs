@@ -60,3 +60,17 @@ for (const key of ["waitForWorkerMinutes", "agentTimeoutMinutes", "commandTimeou
     assert.doesNotThrow(() => load({ [key]: 1.5 }))
   })
 }
+
+test("boxLimit may be left out", () => {
+  assert.doesNotThrow(() => load())
+})
+
+test("boxLimit rejects zero, negative, fractional and non-numeric values", () => {
+  for (const value of [0, -5, 10.5, "10", NaN, null]) {
+    assert.throws(() => load({ boxLimit: value }), /factory\.boxLimit must be a positive number of Boxes/, `accepted ${JSON.stringify(value)}`)
+  }
+})
+
+test("boxLimit accepts a positive whole number", () => {
+  assert.equal(load({ boxLimit: 10 }).factory.boxLimit, 10)
+})
