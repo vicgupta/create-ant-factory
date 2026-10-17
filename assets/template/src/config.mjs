@@ -205,10 +205,10 @@ export function loadConfig(file = CONFIG_FILE) {
 
   if (config.worker !== undefined) {
     if (!config.worker || typeof config.worker !== "object" || Array.isArray(config.worker)) {
-      errors.push('"worker" must be an object like { "provider": "box" } or { "provider": "docker", "docker": { ... } }')
+      errors.push('"worker" must be an object like { "provider": "docker", "docker": { ... } } or { "provider": "box" }')
     } else {
       const provider = config.worker.provider ?? "box"
-      if (!["box", "docker"].includes(provider)) errors.push(`worker.provider "${provider}" must be "box" (the default) or "docker"`)
+      if (!["box", "docker"].includes(provider)) errors.push(`worker.provider "${provider}" must be "docker" (the default) or "box"`)
       if (provider === "docker" || config.worker.docker !== undefined) {
         const docker = dockerConfig(config)
         if (!docker.image) errors.push("worker.docker.image must name the worker image to run")
@@ -248,8 +248,9 @@ export function isValidBranchPrefix(prefix) {
   return true
 }
 
-// Which worker provider runs jobs. Upstash Box is the default so existing
-// factories (no "worker" section at all) keep behaving exactly as before.
+// Which worker provider runs jobs. The template ships "docker". The "box"
+// fallback stays so factories created before the Docker default (with no
+// "worker" section at all) keep behaving exactly as before.
 export function workerProvider(config) {
   return config.worker?.provider ?? "box"
 }
