@@ -63,7 +63,7 @@ test("records are written per run id and read back from nested artifact folders"
 test("a record never stores logs or replies, only counts and names", () => {
   const r = made("9", "needs-attention", { reason: "agent-error" })
   assert.deepEqual(Object.keys(r).sort(), [
-    "agent", "agentMinutes", "agentRuns", "checkAttempts", "checksPassed", "contextBundle", "decisions", "endedAt", "files", "filesChanged", "issue", "labels", "minutes",
+    "agent", "agentMinutes", "agentRuns", "checkAttempts", "checksPassed", "contextBundle", "decisions", "endedAt", "files", "filesChanged", "gate", "issue", "labels", "minutes",
     "mode", "outcome", "provider", "pullRequest", "reason", "repo", "runId", "runUrl", "startedAt", "title", "version", "worker",
   ])
 })

@@ -53,6 +53,17 @@ itself; you only ever add `ready` (and optionally `agent:<name>`).
   failures included) — traces its decisions in the run record's
   `decisions[]`, and re-checks any provenance-stamped plan facts before
   coding. Set `"contextGraph": false` for the old prompts.
+- Risk gates: with a `"riskGates"` block in `factory.config.json` (the
+  template ships one) the factory decides how each pull request goes out
+  from what it measured, never from what the agent says: low-risk changes
+  open ready for review; changes that hit a `draft` rule (sensitive
+  keywords, a `critical` repo tier, too many files or lines, no checks, an
+  earlier failed run on the same files) open as drafts; changes that hit a
+  `needs-attention` rule (migrations, infra) open as drafts and the issue
+  is parked at `factory:needs-attention` for you. The reasons are listed
+  in the pull request. Try a change first with
+  `node scripts/risk-gate.mjs owner/app --files a,b --lines 120`. Remove
+  the block for the old always-ready behavior.
 - `agent:<name>` — optional. Put this on before `ready` to force a specific
   agent type. The factory reads labels at the moment the run starts.
 

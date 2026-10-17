@@ -13,7 +13,8 @@
     "test": "node --test tests/*.test.mjs",
     "report": "node scripts/report.mjs",
     "precedents": "node scripts/precedents.mjs",
-    "verify-docker": "node --env-file=.env scripts/verify-docker.mjs"
+    "verify-docker": "node --env-file=.env scripts/verify-docker.mjs",
+    "risk-gate": "node scripts/risk-gate.mjs"
   },
   "dependencies": {
     "@upstash/box": "^0.7.5"

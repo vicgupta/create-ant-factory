@@ -2,6 +2,7 @@
 // described in the skill's references/config.md.
 import { existsSync, readFileSync } from "node:fs"
 import { pathToFileURL } from "node:url"
+import { riskGateErrors } from "./gates.mjs"
 
 const CONFIG_FILE = new URL("../factory.config.json", import.meta.url)
 const MAX_LABEL_LENGTH = 20 // Upstash Box label limit
@@ -129,6 +130,12 @@ export function loadConfig(file = CONFIG_FILE) {
     errors.push('factory.precedentsFile must be a non-empty file name such as "precedents.json" (built by scripts/precedents.mjs from downloaded run records)')
   }
 
+  // Off unless present. Deterministic rules (paths, keywords, the repo's
+  // tier, issue labels, diff size, checks, failed precedents) that decide
+  // ready vs draft pull request and when to park at needs-attention
+  // (src/gates.mjs). Validated here so a typo'd action fails before a run.
+  errors.push(...riskGateErrors(config))
+
   // Every pull request goes to branchPrefix + the issue number. Without the
   // prefix the branch would be "undefined12", a failure that shows up far
   // from this file, so require it here. It also has to survive
@@ -228,6 +235,9 @@ export function loadConfig(file = CONFIG_FILE) {
         errors.push(`repo "${repo.repo}": ${key} must be a list of non-empty strings, for example ${key === "exclude" ? '[".venv/"]' : '["npm ci"]'}, not ${JSON.stringify(list)}`)
       }
     }
+    // A free-form service tier ("critical", "internal") that
+    // factory.riskGates rules can match with "tiers".
+    if (repo.tier !== undefined && (typeof repo.tier !== "string" || !repo.tier.trim())) errors.push(`repo "${repo.repo}": tier must be a non-empty string such as "critical", or left out`)
     for (const entry of repo.secrets ?? []) {
       if (!entry.secret || !entry.env) errors.push(`repo "${repo.repo}": each secrets entry needs a secret (its name in .env and GitHub) and an env (the variable the repo expects)`)
       else if (!isEnvName(entry.env)) errors.push(`repo "${repo.repo}": secrets env "${entry.env}" must be a shell variable name (letters, digits and "_", not starting with a digit)`)

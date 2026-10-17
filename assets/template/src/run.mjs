@@ -11,6 +11,7 @@ import { resumeEnabled, findFactoryPullRequest, getReviewState, collectFeedback,
 import { recordsEnabled, recordDir, createRunRecord, noteAgentRun, noteChecks, noteDecision, endRun, finishRunRecord, writeRunRecord, appendStepSummary } from "./record.mjs"
 import { planFirstEnabled, validatePlanText, renderPlanComment, planSection, criteriaChecklist, PLAN_FILE } from "./plan-first.mjs"
 import { contextGraphEnabled, loadPrecedents, findPrecedents, buildContextBundle, parseStampedFacts, verifyProvenance, staleFactsSection } from "./context.mjs"
+import { riskGatesEnabled, gateSettings, evaluateRiskGate, parseNumstat, renderGate } from "./gates.mjs"
 
 const WORK_DIR = "/workspace/home/work"
 const NO_STORE = "-c credential.helper="
@@ -412,6 +413,23 @@ async function main() {
       return
     }
 
+    // Risk gate: decided by the factory from what it measured (paths, diff
+    // size, checks, tier, issue labels/text, failed precedents on the same
+    // files). The agent's reply is not an input, so it cannot waive a gate.
+    let gate = null
+    if (riskGatesEnabled(config)) {
+      const numstat = parseNumstat((await sh(box, `cd ${q(repoDir)} && git diff --cached --numstat --no-renames`, { allowFailure: true })).output)
+      let precedents = []
+      try {
+        precedents = findPrecedents(loadPrecedents({ indexFile: process.env.FACTORY_PRECEDENTS_FILE || config.factory.precedentsFile || "precedents.json", recordsDir: recordDir() }), { files: staged })
+      } catch { /* no precedents yet is not a reason to stop */ }
+      gate = evaluateRiskGate(gateSettings(config), { files: staged, lines: numstat.lines, hasChecks: repo.checks.length > 0, tier: repo.tier ?? null, issue: { title: issue.title, body: issue.body, labels: issueLabels }, precedents })
+      record.gate = { decision: gate.decision, rules: gate.reasons.map((r) => r.rule), lines: numstat.lines }
+      console.log(`Risk gate: ${gate.decision}${gate.reasons.length ? ` (${gate.reasons.map((r) => r.rule).join(", ")})` : ""}.`)
+      try { noteDecision(record, { stage: "risk-gate", choice: gate.decision, evidence: staged.slice(0, 10).length ? staged.slice(0, 10) : [repo.repo], policy_or_label: gate.reasons[0]?.rule ?? "risk-gates", outcome: gate.decision === "ready" ? "succeeded" : "pending" }) } catch { /* tracing only */ }
+    }
+    const gateSection = gate ? `\n\n${renderGate(gate)}` : ""
+
     const title = issue.title
     const checkLine = repo.checks.length ? `Checks passed: ${repo.checks.map((c) => `\`${c}\``).join(", ")}.` : "This repo has no automated checks."
     // The summary is whatever the agent wrote into summary.md: unbounded.
@@ -434,7 +452,11 @@ async function main() {
       }
       console.log(`\nRevised pull request: ${revising.url}`)
       record.pullRequest = revising.url
-      await comment(repo.repo, revising.number, `Revised after review by factory worker \`${worker.id}\` (${worker.agent}). ${checkLine}${runUrl ? ` [Factory run](${runUrl}).` : ""}\n\n${description}`)
+      await comment(repo.repo, revising.number, `Revised after review by factory worker \`${worker.id}\` (${worker.agent}). ${checkLine}${runUrl ? ` [Factory run](${runUrl}).` : ""}\n\n${description}${gateSection}`)
+      if (gate?.decision === "needs-attention") {
+        await needsAttention(`The revision was pushed to ${revising.url}, but a risk gate needs a person to decide before it goes further.\n\n${renderGate(gate)}`, "risk-gate")
+        return
+      }
       await removeLabel(repo.repo, issue.number, labels.running)
       await addLabels(repo.repo, issue.number, [labels.review])
       await comment(repo.repo, issue.number, `Pull request revised and ready for another review: ${revising.url}`)
@@ -448,14 +470,19 @@ async function main() {
       head: branch,
       base: repo.baseBranch,
       title,
-      body: `Closes #${issue.number}\n\n${description}${planBody}\n\n---\nBuilt by factory worker \`${worker.id}\` (${worker.agent}) in ${box.kind === "docker" ? "a Docker container" : "an Upstash Box"}. ${checkLine}${runUrl ? ` [Factory run](${runUrl}).` : ""}`,
+      draft: Boolean(gate && gate.decision !== "ready"),
+      body: `Closes #${issue.number}\n\n${description}${planBody}${gateSection}\n\n---\nBuilt by factory worker \`${worker.id}\` (${worker.agent}) in ${box.kind === "docker" ? "a Docker container" : "an Upstash Box"}. ${checkLine}${runUrl ? ` [Factory run](${runUrl}).` : ""}`,
     })
-    console.log(`\nPull request: ${pr.html_url}`)
+    console.log(`\nPull request: ${pr.html_url}${pr.draft ? " (draft)" : ""}`)
     record.pullRequest = pr.html_url
 
+    if (gate?.decision === "needs-attention") {
+      await needsAttention(`A draft pull request was opened, but a risk gate needs a person to decide before it goes further: ${pr.html_url}\n\n${renderGate(gate)}`, "risk-gate")
+      return
+    }
     await removeLabel(repo.repo, issue.number, labels.running)
     await addLabels(repo.repo, issue.number, [labels.review])
-    await comment(repo.repo, issue.number, `Pull request ready for review: ${pr.html_url}`)
+    await comment(repo.repo, issue.number, gate?.decision === "draft" ? `Draft pull request opened for review: ${pr.html_url}\n\n${renderGate(gate)}` : `Pull request ready for review: ${pr.html_url}`)
     endRun(record, "pr-opened")
   } catch (error) {
     endRun(record, "error", "exception")
