@@ -80,6 +80,14 @@ export function loadConfig(file = CONFIG_FILE) {
     }
   }
 
+  // The Box budget in check-setup.mjs subtracts from this. A non-numeric
+  // value turns the spare-Boxes sum into NaN, which reads as green: "NaN
+  // spare" is not less than zero and not equal to zero, so it takes the ok
+  // path. A plan limit is a whole number of Boxes, so require that here.
+  if (config.factory.boxLimit !== undefined && (!Number.isInteger(config.factory.boxLimit) || config.factory.boxLimit <= 0)) {
+    errors.push(`factory.boxLimit must be a positive number of Boxes on the Upstash plan, not ${JSON.stringify(config.factory.boxLimit)}`)
+  }
+
   for (const [name, agent] of Object.entries(config.agents)) {
     // Box labels are at most 20 characters, and each Box gets "agent-<name>".
     if (!/^[a-z0-9-]{1,14}$/.test(name)) errors.push(`agent name "${name}" must be 1-14 lowercase letters, digits or dashes`)
