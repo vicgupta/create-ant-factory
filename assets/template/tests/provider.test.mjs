@@ -7,7 +7,7 @@ import { mkdtempSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { loadConfig, workerProvider, dockerConfig } from "../src/config.mjs"
-import { buildDockerRunArgs, buildDockerSmokeArgs, containerNameFor, createDockerWorker, formatDockerRunCommand, parseDockerInfo, parseDockerPs, parseDockerSystemDf, parseDockerVersion, parseMemoryBytes, summarizeDockerChecks, verifyDocker } from "../src/docker.mjs"
+import { buildDockerRunArgs, buildDockerSmokeArgs, containerNameFor, containersForWorker, createDockerWorker, formatDockerRunCommand, parseDockerInfo, parseDockerPs, parseDockerSystemDf, parseDockerVersion, parseMemoryBytes, summarizeDockerChecks, verifyDocker } from "../src/docker.mjs"
 
 const baseConfig = () => ({
   factory: {
@@ -75,6 +75,12 @@ test("parseDockerPs marks only the labelled worker busy", () => {
   const rows = parseDockerPs("factory-claude-01-7\tUp 1m\tcreate-ant-factory=true,worker=claude-01,run-id=7\nother\tUp 1m\tapp=web")
   assert.equal(rows.find((r) => r.labels.worker === "claude-01")?.name, "factory-claude-01-7")
   assert.equal(rows.filter((r) => r.labels.worker === "codex-01").length, 0)
+})
+
+test("containersForWorker finds only the stuck containers of one worker", () => {
+  const rows = parseDockerPs("factory-claude-01-7\tUp 1m\tcreate-ant-factory=true,worker=claude-01,run-id=7\nfactory-codex-01-9\tUp 2m\tcreate-ant-factory=true,worker=codex-01,run-id=9\nother\tUp 1m\tapp=web")
+  assert.deepEqual(containersForWorker(rows, "claude-01").map((c) => c.name), ["factory-claude-01-7"])
+  assert.deepEqual(containersForWorker(rows, "unknown"), [])
 })
 
 // --- verification (verifyDocker) -------------------------------------------
