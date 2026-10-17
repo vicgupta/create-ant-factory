@@ -184,6 +184,17 @@ export async function createAgentBox(config, agentName, name, labels) {
 
 export const imageFor = (config, agentName) => config.agents[agentName].snapshotId ?? config.factory.snapshotId ?? null
 
+// The label a run puts on the Box it claims, so a second run that reaches
+// the same worker at the same moment can see the claim and back off (the
+// lower label wins). A Box label holds at most 20 characters, and two runs
+// must never compute the same label: run ids grow at the tail, so keeping
+// the first 20 characters would throw away exactly the digits that tell two
+// runs starting together apart. The last 16 digits fit ("run-" + 16 = 20)
+// and stay readable, so a stale label still matches its run in the console.
+export function runLabelFor(runId) {
+  return `run-${String(runId).replace(/\D/g, "").slice(-16)}`
+}
+
 // Waits for a free worker, then marks its Box busy. Two factory runs can start
 // at the same moment and pick the same worker, so each run also adds its own
 // run label. If two run labels show up, the higher one backs off.
@@ -216,7 +227,7 @@ export async function claimWorker(config, issueLabels, runId) {
     return null
   }
 
-  const runLabel = `run-${runId}`.slice(0, 20)
+  const runLabel = runLabelFor(runId)
   const deadline = Date.now() + (config.factory.waitForWorkerMinutes ?? 30) * 60 * 1000
 
   for (let attempt = 0; Date.now() < deadline; attempt++) {
