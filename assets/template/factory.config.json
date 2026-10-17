@@ -18,7 +18,7 @@
     "commandTimeoutMinutes": 15
   },
   "worker": {
-    "provider": "box",
+    "provider": "docker",
     "docker": {
       "image": "create-ant-factory-worker:latest",
       "cpus": "2",
