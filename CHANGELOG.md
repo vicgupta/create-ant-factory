@@ -23,6 +23,16 @@ loosely "Keep a Changelog"; versions are git tags (`0.1`, `0.2`, …).
   run would revise. Off by default for existing configs; the template turns
   it on.
 
+### Fixed
+
+- The three missed box-only scripts (`build-snapshot`, `apply-box-settings`,
+  `box-exec`) now refuse first under the Docker provider with a pointer to
+  `scripts/verify-docker.mjs`, like `provision-workers`, `delete-workers`
+  and `smoke-test` already did. Without it, a Docker factory would have
+  addressed a running container's name as an Upstash Box. The
+  `requireBoxProvider` comment in `src/config.mjs` now names all six scripts
+  so the list cannot go stale unnoticed again.
+
 ## 0.2 — 2026-10-17
 
 Thirty-one pull requests since 0.1, each reviewed with its test suite run
