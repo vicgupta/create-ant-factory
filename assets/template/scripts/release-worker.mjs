@@ -8,6 +8,9 @@
 // removed too: one that exited without being removed (host reboot, OOM kill)
 // no longer marks the worker busy but still holds the job's sign-in files.
 //
+// With the Daytona provider it is the same idea: every factory sandbox
+// labelled worker=<id>, running or stopped, is deleted.
+//
 // Run with: node --env-file=.env scripts/release-worker.mjs <worker id>
 import { Box } from "@upstash/box"
 import { loadConfig, workerProvider, dockerHostFor } from "../src/config.mjs"
@@ -15,6 +18,7 @@ import { getWorkerStates } from "../src/workers.mjs"
 import { sh, q } from "../src/box.mjs"
 import { secretPaths } from "../src/agents.mjs"
 import { listDockerWorkers, containersForWorker, removeDockerWorker, dockerHandle } from "../src/docker.mjs"
+import { listDaytonaWorkers, sandboxesForWorker, deleteDaytonaSandboxes } from "../src/daytona.mjs"
 
 const config = loadConfig()
 const workerId = process.argv[2]
@@ -32,6 +36,20 @@ if (workerProvider(config) === "docker") {
     await removeDockerWorker(dockerHandle(container.name, host))
     console.log(`Removed leftover container ${container.name} (${container.status})`)
   }
+  console.log(`Worker ${worker.id} is free.`)
+  process.exit(0)
+}
+
+if (workerProvider(config) === "daytona") {
+  const worker = config.workers.find((w) => w.id === workerId)
+  if (!worker) throw new Error("Usage: release-worker.mjs <worker id>")
+  const stuck = sandboxesForWorker(await listDaytonaWorkers(config), worker.id)
+  if (stuck.length === 0) {
+    console.log(`No factory sandboxes, running or stopped, exist for worker ${worker.id}. Nothing to release.`)
+    process.exit(0)
+  }
+  await deleteDaytonaSandboxes(config, stuck)
+  for (const sandbox of stuck) console.log(`Deleted leftover Daytona sandbox ${sandbox.name} (${sandbox.state})`)
   console.log(`Worker ${worker.id} is free.`)
   process.exit(0)
 }

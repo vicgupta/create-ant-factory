@@ -2,10 +2,13 @@
 // named Box, busy while its Box carries the busy label. With the Docker
 // provider (worker.provider: "docker") a worker is busy while a container
 // labelled worker=<id> is running; containers are one-per-job and removed
-// at the end, so there is no paused/idle state to report.
+// at the end, so there is no paused/idle state to report. The Daytona
+// provider (worker.provider: "daytona") works the same way with one sandbox
+// per job, labelled worker=<id>: busy while one is not stopped or deleted.
 import { Box } from "@upstash/box"
 import { boxNameFor, workerProvider } from "./config.mjs"
 import { listDockerWorkers } from "./docker.mjs"
+import { listDaytonaWorkers } from "./daytona.mjs"
 
 export async function getWorkerStates(config) {
   if (workerProvider(config) === "docker") {
@@ -19,6 +22,8 @@ export async function getWorkerStates(config) {
     })
   }
 
+  if (workerProvider(config) === "daytona") return daytonaWorkerStates(config, await listDaytonaWorkers(config))
+
   const boxes = await Box.list({ label: config.factory.boxLabel })
   const byName = new Map(boxes.map((b) => [b.name, b]))
 
@@ -28,6 +33,18 @@ export async function getWorkerStates(config) {
     if (!worker.enabled) state = "disabled"
     else if (box && (box.labels ?? []).includes(config.factory.busyLabel)) state = "busy"
     return { ...worker, boxName: boxNameFor(config, worker), boxId: box?.id ?? null, boxStatus: box?.status ?? "not created", state }
+  })
+}
+
+// Pure: worker states from the factory's Daytona sandboxes (rows from
+// listDaytonaWorkers). Exported for the tests.
+export function daytonaWorkerStates(config, sandboxes) {
+  return config.workers.map((worker) => {
+    const sandbox = sandboxes.find((s) => s.busy && s.labels?.worker === worker.id)
+    let state = "free"
+    if (!worker.enabled) state = "disabled"
+    else if (sandbox) state = "busy"
+    return { ...worker, boxName: sandbox?.name ?? `${config.factory.boxNamePrefix}${worker.id}`, boxId: sandbox?.id ?? null, boxStatus: sandbox?.state ?? "not created", state }
   })
 }
 

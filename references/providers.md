@@ -1,9 +1,11 @@
-# Worker providers: Docker or Box
+# Worker providers: Docker, Box or Daytona
 
 A worker is wherever one job's agent actually runs. `worker.provider` in
 `factory.config.json` chooses it. Docker is the default for new factories:
 free, local, and the code never leaves your machine. Upstash Box remains
-for when you'd rather not run a host at all.
+for when you'd rather not run a host at all. Daytona runs one cloud
+sandbox per job, created and deleted like a Docker container (see
+"Daytona" below).
 
 ```json
 "worker": {
@@ -142,10 +144,64 @@ sandbox), not this one. Never mount `/var/run/docker.sock` into the
 worker container: that is root on the host. The factory's generated
 `docker run` never does, and the tests assert it stays that way.
 
+## Daytona
+
+```json
+"worker": {
+  "provider": "daytona",
+  "daytona": { "snapshot": "create-ant-factory-worker", "target": "us" }
+}
+```
+
+One Daytona sandbox per job, through Daytona's public REST API
+(`src/daytona.mjs`; no SDK dependency, the HTTP layer is a thin injectable
+`fetch`). It is the Docker shape in someone else's cloud: nothing exists
+between jobs, a running sandbox labelled `worker=<id>` is the busy marker,
+and the sandbox is deleted at the end of the job, success or failure. A
+GitHub-hosted runner can reach it, so it needs no self-hosted runner.
+
+Setup:
+
+1. Create an API key in the Daytona dashboard and put it in `.env` as
+   `DAYTONA_API_KEY`. `scripts/set-secrets.mjs` copies it to the factory
+   repo's secrets when the provider is `"daytona"`; the workflow passes it
+   through, plus the optional repository variables `DAYTONA_API_URL`
+   (self-hosted Daytona) and `DAYTONA_TARGET` (region). The key never goes
+   in `factory.config.json` and is never sent into a sandbox.
+2. Turn the worker image into a Daytona snapshot (Daytona expects
+   `linux/amd64`):
+   `docker build --platform=linux/amd64 -f worker/Dockerfile -t create-ant-factory-worker:latest .`
+   then `daytona snapshot push create-ant-factory-worker:latest --name create-ant-factory-worker`
+   (add `--cpu`, `--memory`, `--disk` to size the sandboxes). Set
+   `worker.daytona.snapshot` to that name. Without a snapshot, sandboxes
+   start from Daytona's default image, which has no agent CLIs.
+3. `node --env-file=.env scripts/check-setup.mjs` verifies the key (it must
+   list sandboxes), the API URL and that the snapshot is `active`. It creates
+   nothing. `src/plan.mjs` prints the exact create request and calls nothing.
+
+What a job does: `POST /sandbox` (snapshot, target, labels
+`create-ant-factory=true`, `worker`, `run-id`, `env.HOME=/workspace/home`,
+`public: false`, `autoStopInterval`, `autoDeleteInterval: 0`), waits for
+state `started`, then drives it with the toolbox API (`process/execute`
+for every command, `files/upload-v2` for prompt and sign-in files), exactly
+the two primitives a Box offers. The sandbox is deleted if it fails to
+start or its workspace cannot be prepared, and always when the job ends.
+
+Cleanup: `scripts/release-worker.mjs <worker id>` deletes every factory
+sandbox of that worker, running or stopped. One a killed runner left behind
+also cleans itself up: it stops after `autoStopMinutes` idle and, being
+created with `autoDeleteInterval: 0`, is then deleted. The Box-only scripts
+(`provision-workers`, `delete-workers`, `smoke-test`, `build-snapshot`,
+`apply-box-settings`, `box-exec`) refuse to run under Daytona.
+
+Not there yet: no Upstash-style browser (install one in the snapshot if the
+agent needs it), and resources come from the snapshot (`daytona snapshot
+push --cpu/--memory/--disk`), not from `factory.config.json`.
+
 ## Future providers
 
-Daytona, E2B and similar sandboxes would slot in behind the same seam
-used here: a provider that starts one isolated workspace per job, exposes
-shell + file-write to it, reports busy workers, and removes the workspace
-at the end (`src/docker.mjs` is the worked example). They are not
-implemented; do not add config for them until one is.
+E2B and similar sandboxes would slot in behind the same seam: a provider
+that starts one isolated workspace per job, exposes shell + file-write to
+it, reports busy workers, and removes the workspace at the end
+(`src/docker.mjs` and `src/daytona.mjs` are the worked examples). They are
+not implemented; do not add config for them until one is.

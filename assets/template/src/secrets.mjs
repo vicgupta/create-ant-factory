@@ -22,11 +22,13 @@ export function readSecret(entry) {
 // [repo, secret name, value] rows. The factory repo gets the GitHub token,
 // every sign-in secret of an agent type an enabled worker runs, and each app
 // repo's own secrets. The Box key is only needed, and only asked for, with the
-// Box provider: a Docker-only factory has no UPSTASH_BOX_API_KEY. Each app
-// repo gets the GitHub token for its trigger workflow.
+// Box provider: a Docker-only factory has no UPSTASH_BOX_API_KEY. Likewise
+// DAYTONA_API_KEY only with the Daytona provider. Each app repo gets the
+// GitHub token for its trigger workflow.
 export function secretPlan(config) {
   const plan = []
   if (workerProvider(config) === "box") plan.push([config.factory.repo, "UPSTASH_BOX_API_KEY", process.env.UPSTASH_BOX_API_KEY])
+  if (workerProvider(config) === "daytona") plan.push([config.factory.repo, "DAYTONA_API_KEY", process.env.DAYTONA_API_KEY])
   plan.push([config.factory.repo, "FACTORY_GITHUB_TOKEN", process.env.FACTORY_GITHUB_TOKEN])
   for (const name of usedAgents(config)) {
     for (const entry of config.agents[name]?.auth ?? []) plan.push([config.factory.repo, entry.secret, readSecret(entry)])

@@ -46,7 +46,7 @@ test("docker host can be pinned in config and bad hosts are refused", () => {
 })
 
 test("unknown providers and bad docker limits are refused", () => {
-  assert.throws(() => load({ ...baseConfig(), worker: { provider: "daytona" } }), /worker\.provider/)
+  assert.throws(() => load({ ...baseConfig(), worker: { provider: "kubernetes" } }), /worker\.provider/)
   assert.throws(() => load({ ...baseConfig(), worker: { provider: "docker", docker: { memory: "lots" } } }), /worker\.docker\.memory/)
   assert.throws(() => load({ ...baseConfig(), worker: { provider: "docker", docker: { cpus: "0" } } }), /worker\.docker\.cpus/)
 })
