@@ -75,6 +75,20 @@ for (const key of ["waitForWorkerMinutes", "agentTimeoutMinutes", "commandTimeou
   })
 }
 
+test("boxLimit may be left out", () => {
+  assert.doesNotThrow(() => load())
+})
+
+test("boxLimit rejects zero, negative, fractional and non-numeric values", () => {
+  for (const value of [0, -5, 10.5, "10", NaN, null]) {
+    assert.throws(() => load({ boxLimit: value }), /factory\.boxLimit must be a positive number of Boxes/, `accepted ${JSON.stringify(value)}`)
+  }
+})
+
+test("boxLimit accepts a positive whole number", () => {
+  assert.equal(load({ boxLimit: 10 }).factory.boxLimit, 10)
+})
+
 test("allowedActors entries must look like GitHub usernames", () => {
   load({ allowedActors: ["vicgupta", "octo-org"] }) // letters, digits and hyphens are fine
   for (const bad of ["vic gupta", "@vicgupta", "vic'gupta", "vic_gupta", "", 42]) {
