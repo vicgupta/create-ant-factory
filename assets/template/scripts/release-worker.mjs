@@ -2,15 +2,39 @@
 // cancelled or crashes before it can release its Box. Check the Actions tab
 // first: if a run is still using the worker, leave it alone.
 //
+// With the Docker worker provider there is no Box: a stuck busy worker is a
+// leftover container from a killed run, and removing it is the whole cleanup
+// (the workspace and every sign-in file go with it).
+//
 // Run with: node --env-file=.env scripts/release-worker.mjs <worker id>
 import { Box } from "@upstash/box"
-import { loadConfig } from "../src/config.mjs"
+import { loadConfig, workerProvider, dockerHostFor } from "../src/config.mjs"
 import { getWorkerStates } from "../src/workers.mjs"
 import { sh, q } from "../src/box.mjs"
 import { secretPaths } from "../src/agents.mjs"
+import { listDockerWorkers, containersForWorker, removeDockerWorker, dockerHandle } from "../src/docker.mjs"
 
 const config = loadConfig()
-const worker = (await getWorkerStates(config)).find((w) => w.id === process.argv[2])
+const workerId = process.argv[2]
+
+if (workerProvider(config) === "docker") {
+  const worker = (await getWorkerStates(config)).find((w) => w.id === workerId)
+  if (!worker) throw new Error("Usage: release-worker.mjs <worker id>")
+  const stuck = containersForWorker(await listDockerWorkers(config), worker.id)
+  if (stuck.length === 0) {
+    console.log(`No factory containers are running for worker ${worker.id}. Nothing to release.`)
+    process.exit(0)
+  }
+  const host = dockerHostFor(config)
+  for (const container of stuck) {
+    await removeDockerWorker(dockerHandle(container.name, host))
+    console.log(`Removed stuck container ${container.name} (${container.status})`)
+  }
+  console.log(`Worker ${worker.id} is free.`)
+  process.exit(0)
+}
+
+const worker = (await getWorkerStates(config)).find((w) => w.id === workerId)
 if (!worker?.boxId) throw new Error("Usage: release-worker.mjs <worker id> (the worker must have a Box)")
 
 const box = await Box.get(worker.boxId)
