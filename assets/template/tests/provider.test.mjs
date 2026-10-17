@@ -205,3 +205,20 @@ test("requireBoxProvider refuses under docker and points at the docker equivalen
     },
   )
 })
+
+test("requireBoxProvider guards every other box-only lifecycle script too", () => {
+  const config = load({ ...baseConfig(), worker: { provider: "docker" } })
+  // These scripts reach for Upstash with a worker id or a container name when
+  // a Docker factory has a container running, so they refuse first instead.
+  for (const script of ["build-snapshot.mjs", "apply-box-settings.mjs", "box-exec.mjs"]) {
+    assert.throws(
+      () => requireBoxProvider(config, script),
+      (error) => {
+        assert.match(error.message, /worker\.provider is "docker"/)
+        assert.match(error.message, new RegExp(script.replace(".", "\\.")))
+        assert.match(error.message, /verify-docker\.mjs/)
+        return true
+      },
+    )
+  }
+})
