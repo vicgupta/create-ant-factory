@@ -1,11 +1,11 @@
 ---
 name: create-ant-factory
-description: Set up a "software factory" that turns labelled GitHub issues into reviewed pull requests, using coding agents (Claude Code, Codex or any other CLI agent) that run in Upstash Box sandboxes and are started by GitHub Actions. Use this whenever someone wants to build, recreate, extend or debug an issue-to-PR pipeline, a pool of background coding agents, "agents that work on my GitHub issues", a label-triggered agent workflow, or anything that combines Upstash Box with coding agents and GitHub, even if they never say "software factory". Also use it to add a repo, an agent type, workers, a model or effort setting, or a worker image (snapshot) to a factory built this way.
+description: Set up a "software factory" that turns labelled GitHub issues into reviewed pull requests, using coding agents (Claude Code, Codex or any other CLI agent) that run in sandboxes (Docker containers by default, Upstash Boxes optionally) and are started by GitHub Actions. Use this whenever someone wants to build, recreate, extend or debug an issue-to-PR pipeline, a pool of background coding agents, "agents that work on my GitHub issues", a label-triggered agent workflow, or anything that combines sandboxes with coding agents and GitHub, even if they never say "software factory". Also use it to add a repo, an agent type, workers, a model or effort setting, or a worker image (snapshot) to a factory built this way.
 ---
 
 # Create an Upstash software factory
 
-You are helping someone build a small system with one job: they put a `ready` label on a GitHub issue, a coding agent implements it inside an Upstash Box, and a pull request comes back for them to review and merge. This skill carries a working implementation (in `assets/template/`) and the lessons from building it, so you adapt proven code instead of inventing it.
+You are helping someone build a small system with one job: they put a `ready` label on a GitHub issue, a coding agent implements it inside a sandbox, and a pull request comes back for them to review and merge. This skill carries a working implementation (in `assets/template/`) and the lessons from building it, so you adapt proven code instead of inventing it.
 
 ## What gets built
 
