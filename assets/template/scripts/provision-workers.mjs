@@ -1,17 +1,21 @@
 // Creates a paused Box for every enabled worker in factory.config.json that
 // does not have one yet. Safe to run again. It skips workers that already have
-// a Box and never deletes anything.
+// a Box and never deletes anything. Refuses when worker.provider is "docker"
+// (there are no Boxes then; job containers are created per run).
 //
 // Preview: node --env-file=.env scripts/provision-workers.mjs [worker id ...]
 // Create:  node --env-file=.env scripts/provision-workers.mjs [worker id ...] --yes
 //
 // Name worker ids to create only those, for example one Box to build the
 // worker image in before the rest are created from it.
-import { loadConfig } from "../src/config.mjs"
+import { loadConfig, requireBoxProvider } from "../src/config.mjs"
 import { createWorkerBox, describeBoxSettings, wantsBrowser, hasBrowser, browserMissingHelp } from "../src/box.mjs"
 import { getWorkerStates } from "../src/workers.mjs"
 
 const config = loadConfig()
+// With the Docker provider there are no Boxes to provision: job containers
+// are created per run. Refuse instead of creating Upstash Boxes by mistake.
+requireBoxProvider(config, "provision-workers.mjs")
 const browserNote = wantsBrowser(config) ? "browser access on" : "browser access off"
 const confirmed = process.argv.includes("--yes")
 const only = process.argv.slice(2).filter((a) => !a.startsWith("--"))
