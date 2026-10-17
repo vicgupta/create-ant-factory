@@ -8,11 +8,14 @@
 // Preview: node --env-file=.env scripts/apply-box-settings.mjs [agent type]
 // Apply:   node --env-file=.env scripts/apply-box-settings.mjs [agent type] --yes
 import { Box } from "@upstash/box"
-import { loadConfig } from "../src/config.mjs"
+import { loadConfig, requireBoxProvider } from "../src/config.mjs"
 import { applyBoxSettings, describeBoxSettings } from "../src/box.mjs"
 import { getWorkerStates } from "../src/workers.mjs"
 
 const config = loadConfig()
+// Settings are written into worker Boxes. Under the Docker provider there
+// are no Boxes, so refuse instead of Box.get()ing a container name.
+requireBoxProvider(config, "apply-box-settings.mjs")
 const apply = process.argv.includes("--yes")
 const onlyAgent = process.argv.slice(2).find((a) => !a.startsWith("--"))
 
