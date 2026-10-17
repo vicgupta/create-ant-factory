@@ -17,6 +17,26 @@ export function loadConfig(file = CONFIG_FILE) {
   }
   if (errors.length) throw new Error(`factory.config.json: ${errors.join("; ")}`)
 
+  // The four label names the factory moves an issue through. A missing one
+  // fails confusingly later: `issueLabels.includes(undefined)` is always
+  // false, so every run silently skips, and posting `[undefined]` to the
+  // labels endpoint is a 422. Two keys sharing a name breaks the transitions
+  // the same way, so each name must be unique too.
+  for (const key of ["ready", "running", "review", "needsAttention"]) {
+    const name = config.labels[key]
+    if (typeof name !== "string" || !name.trim()) {
+      errors.push(`labels.${key} must be the name of the GitHub issue label (a non-empty string)`)
+    }
+  }
+  const labelNames = new Set()
+  for (const key of ["ready", "running", "review", "needsAttention"]) {
+    const name = config.labels[key]
+    if (typeof name === "string" && name.trim()) {
+      if (labelNames.has(name.toLowerCase())) errors.push(`labels.${key} "${name}" is used for another label too; each label needs its own name`)
+      labelNames.add(name.toLowerCase())
+    }
+  }
+
   if (!/^[^/\s]+\/[^/\s]+$/.test(config.factory.repo ?? "") || config.factory.repo.startsWith("OWNER/")) {
     errors.push(`factory.repo "${config.factory.repo}" must be the real owner/name of the factory repo`)
   }
