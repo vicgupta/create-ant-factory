@@ -4,6 +4,7 @@ import { existsSync, readFileSync } from "node:fs"
 import { pathToFileURL } from "node:url"
 import { riskGateErrors } from "./gates.mjs"
 import { reviewerErrors } from "./reviewer.mjs"
+import { scheduledScanErrors } from "./scan.mjs"
 
 const CONFIG_FILE = new URL("../factory.config.json", import.meta.url)
 const MAX_LABEL_LENGTH = 20 // Upstash Box label limit
@@ -141,6 +142,11 @@ export function loadConfig(file = CONFIG_FILE) {
   // staged diff before the pull request opens, and findings at or above
   // blockOn park the issue (src/reviewer.mjs).
   errors.push(...reviewerErrors(config))
+
+  // Off unless present. Optional scheduled scan that files candidate issues
+  // (never the ready label) from TODO/FIXME markers or a candidates JSON
+  // (src/scan.mjs, scripts/scheduled-scan.mjs).
+  errors.push(...scheduledScanErrors(config))
 
   // Every pull request goes to branchPrefix + the issue number. Without the
   // prefix the branch would be "undefined12", a failure that shows up far

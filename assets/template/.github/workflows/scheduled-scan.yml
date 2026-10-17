@@ -1,0 +1,74 @@
+name: Scheduled scan
+
+# Optional. Proposes candidate issues from TODO/FIXME markers (and optional
+# candidates JSON). It never applies the ready label and never starts factory
+# work — a human still does that.
+#
+# Turn on with "enabled": true under factory.scheduledScan in
+# factory.config.json. While enabled is false (the template default) the
+# script exits 0 without filing anything, so the schedule is harmless until
+# you opt in. Cadence is this workflow's cron; change it to match how often
+# you want proposals (the config's cronNote is documentation only).
+on:
+  schedule:
+    # Weekly Monday 09:00 UTC. Edit to taste; keep factory.scheduledScan.cronNote in sync.
+    - cron: "0 9 * * 1"
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: Preview only (do not create issues)
+        type: boolean
+        default: true
+      force:
+        description: Run even when factory.scheduledScan.enabled is false
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+# One scan at a time so two schedules cannot double-file the same candidate.
+concurrency:
+  group: scheduled-scan
+  cancel-in-progress: false
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      FACTORY_GITHUB_TOKEN: ${{ secrets.FACTORY_GITHUB_TOKEN }}
+      GH_TOKEN: ${{ secrets.FACTORY_GITHUB_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - name: Propose candidate issues
+        # workflow_dispatch can force a dry-run; the schedule always creates
+        # when the feature is enabled. Ready is never applied (src/scan.mjs).
+        run: |
+          set -euo pipefail
+          args=()
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            if [ "${{ inputs.dry_run }}" = "true" ]; then
+              echo "Dry-run from workflow_dispatch (no issues will be created)."
+            else
+              args+=(--yes)
+            fi
+            if [ "${{ inputs.force }}" = "true" ]; then
+              args+=(--force)
+            fi
+          else
+            args+=(--yes)
+          fi
+          if [ -f scripts/scan-candidates.example.json ]; then
+            # Optional committed proposals. Copy to scan-candidates.json to use.
+            :
+          fi
+          if [ -f scripts/scan-candidates.json ]; then
+            args+=(--candidates scripts/scan-candidates.json --also-scan)
+          fi
+          node scripts/scheduled-scan.mjs --json "${args[@]}"

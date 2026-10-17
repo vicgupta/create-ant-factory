@@ -64,6 +64,26 @@
       "blockOn": "critical",
       "timeoutMinutes": 10,
       "onError": "needs-attention"
+    },
+    "scheduledScan": {
+      "enabled": false,
+      "candidateLabel": "factory:candidate",
+      "cronNote": "0 9 * * 1",
+      "paths": [
+        "src/",
+        "lib/",
+        "app/",
+        "packages/"
+      ],
+      "markers": [
+        "TODO",
+        "FIXME",
+        "XXX",
+        "HACK"
+      ],
+      "skipClosedDays": 30,
+      "maxPerRun": 10,
+      "repos": []
     }
   },
   "worker": {
@@ -108,7 +128,7 @@
       "command": "codex exec --skip-git-repo-check --dangerously-bypass-approvals-and-sandbox --output-last-message {summary} \"$(cat {prompt})\""
     },
     "opencode": {
-      "description": "OpenCode signed in with an Anthropic API key. Any models.dev provider works — see references/agents.md in the skill.",
+      "description": "OpenCode signed in with an Anthropic API key. Any models.dev provider works \u2014 see references/agents.md in the skill.",
       "auth": [
         {
           "secret": "ANTHROPIC_API_KEY",

@@ -18,6 +18,7 @@
 | Coordination code | `src/` in the factory repo | Picks and claims a worker, drives the worker's sandbox, talks to GitHub. |
 | Workers | One Docker container per job (default), or named Upstash Boxes `<prefix><worker id>` with `"provider": "box"` | Where the agent runs. Containers are removed when the job ends; Boxes are paused when idle. |
 | Config | `factory.config.json` | Repos, checks, workers, agent types with their model and effort settings and image/snapshot ids, labels, allowed actors. |
+| Scheduled scan (optional) | `.github/workflows/scheduled-scan.yml` + `scripts/scheduled-scan.mjs` | On a cron (and `workflow_dispatch`), proposes candidate issues from markers / a candidates JSON. Labels them `factory:candidate` only; a human still applies `ready`. |
 
 GitHub Actions cannot trigger across repos on label events. That is why each app repo needs the small trigger workflow, and why the app repo needs a secret holding a token that can write to the factory repo.
 
@@ -99,6 +100,9 @@ scripts/box-exec.mjs         run one command in a worker's Box (Box provider)
 scripts/list-boxes.mjs       every Box on the account (Box provider)
 scripts/create-demo-issues.mjs  test issues, unlabelled by default
 templates/factory-ready.yml  trigger workflow with placeholders
+src/scan.mjs                 scheduled scan: fingerprint, dedupe, marker parse, label safety
+scripts/scheduled-scan.mjs   dry-run / create candidate issues (never ready)
+.github/workflows/scheduled-scan.yml  optional cron that runs the scan
 worker/setup.sh              what goes into the worker image
 ```
 
