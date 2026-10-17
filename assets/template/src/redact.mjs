@@ -34,9 +34,12 @@ export function collectSecrets(config, { agentName, repo } = {}) {
   return [...values]
 }
 
-// Pure and safe to test: replaces every occurrence of every value.
+// Pure and safe to test: replaces every occurrence of every value. Longer
+// values go first: when one secret contains another (a token inside an auth
+// JSON file, a key that starts with a shorter secret), replacing the short
+// one first would break up the long one and leave the rest of it in the text.
 export function redactSecrets(text, values) {
   let out = String(text)
-  for (const value of values) out = out.split(value).join("***")
+  for (const value of [...values].sort((a, b) => b.length - a.length)) out = out.split(value).join("***")
   return out
 }
