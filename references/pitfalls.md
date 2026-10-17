@@ -107,6 +107,9 @@ Several agents working on one small repo all edit the same few files. Each PR is
 
 ## Upstash Box
 
+**Two runs can claim the same worker if their run labels collide.**
+`claimWorker` marks a claimed Box with `run-<run id>`, and a rival run that reaches the same worker at the same moment backs off when it sees a lower label. The label is capped at 20 characters (the Box limit), and truncating the front of a long run id would discard exactly the digits that tell two runs starting together apart: GitHub run ids grow at the tail, so adjacent runs would compute the same label, the rival check would see no difference, and both agents would share one Box, each `rm -rf`-ing the other's work directory. `runLabelFor` keeps the last 16 digits instead, which always fits and stays readable, so a stale label still matches its run in the console.
+
 **The Box limit counts paused Boxes.**
 The free plan allowed 10 Boxes in total. Creating one more fails with "Box limit reached". Count existing Boxes before provisioning, and leave a slot for smoke tests if you can.
 
