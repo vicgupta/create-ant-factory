@@ -2,7 +2,7 @@
 //
 // Run with: node --env-file=.env src/run.mjs owner/app-repo 12
 import { loadConfig, findRepo } from "./config.mjs"
-import { getIssue, getHumanComments, trustedComments, capComments, addLabels, removeLabel, comment, openPullRequest } from "./github.mjs"
+import { getIssue, getHumanComments, trustedComments, isAllowedActor, capComments, addLabels, removeLabel, comment, openPullRequest } from "./github.mjs"
 import { claimWorker, releaseWorker, sh, q, runScript, startBrowser } from "./box.mjs"
 import { signIn, writeJobFiles, writeRepoEnv, runAgent, secretPaths, REPO_ENV_FILE } from "./agents.mjs"
 import { collectSecrets, redactSecrets } from "./redact.mjs"
@@ -79,7 +79,7 @@ async function main() {
 
   // The label path is guarded in the app repo's trigger. This guards the
   // "Run workflow" button, which anyone with write access to this repo can press.
-  if (process.env.GITHUB_EVENT_NAME === "workflow_dispatch" && !config.factory.allowedActors.includes(process.env.GITHUB_ACTOR)) {
+  if (process.env.GITHUB_EVENT_NAME === "workflow_dispatch" && !isAllowedActor(config.factory.allowedActors, process.env.GITHUB_ACTOR)) {
     throw new Error(`${process.env.GITHUB_ACTOR} is not in factory.allowedActors, so this manual run is refused.`)
   }
 
