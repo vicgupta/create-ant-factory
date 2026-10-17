@@ -17,7 +17,7 @@ The first worker image contained `~/.git-credentials`. `build-snapshot.mjs` now 
 Sign-in files written for a job are still there after the pause. The template deletes them in `finally`. Keep it that way. A cancelled run never reaches `finally`, so `release-worker.mjs` deletes them too.
 
 **Anyone who can label can spend the subscription.**
-The trigger checks `github.actor` against `allowedActors`. Do not remove that check. `github.repository_owner` is the organisation for org repos, so a comparison against it never matches a person there. The "Run workflow" button on the factory repo is a second way in, open to everyone with write access to that repo, so `src/run.mjs` checks the actor against the same list.
+The trigger checks `github.actor` against `allowedActors`. Do not remove that check. The comparison is case-insensitive, like the one in `src/run.mjs`: a mixed-case entry still matches. A refused actor fails the trigger step with a message instead of the job silently skipping. `github.repository_owner` is the organisation for org repos, so a comparison against it never matches a person there. The "Run workflow" button on the factory repo is a second way in, open to everyone with write access to that repo, so `src/run.mjs` checks the actor against the same list.
 
 **Agent transcripts end up in an image.**
 Images are built in worker Boxes that may have done jobs. Claude Code and Codex keep full transcripts, app code included, under `~/.claude/projects` and `~/.codex/sessions`. `build-snapshot.mjs` deletes those, the agent types' `jobFiles`, and anything in `factory.imageCleanPaths` before the snapshot.
