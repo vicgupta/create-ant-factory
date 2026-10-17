@@ -262,6 +262,14 @@ export function workerProvider(config) {
   return config.worker?.provider ?? "box"
 }
 
+// What a worker's unit of execution is called in user-facing text: "Box" for
+// the Upstash provider, "Container" for the Docker provider (one container is
+// created per job and removed when the job ends). Capitalised, for the start
+// of a column. Kept in one place so status.mjs and plan.mjs cannot disagree.
+export function workerNoun(config) {
+  return workerProvider(config) === "docker" ? "Container" : "Box"
+}
+
 // Box-lifecycle scripts (provision-workers, delete-workers, smoke-test)
 // create, delete or inspect Upstash Boxes. Under the Docker provider there are
 // no Boxes: one container is created per job and removed when the job ends.
