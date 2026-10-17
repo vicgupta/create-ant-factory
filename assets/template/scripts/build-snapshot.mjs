@@ -13,13 +13,17 @@
 // The worker needs a Box. Create one with: scripts/provision-workers.mjs <worker id> --yes
 import { readFileSync, writeFileSync } from "node:fs"
 import { Box } from "@upstash/box"
-import { loadConfig, boxNameFor } from "../src/config.mjs"
+import { loadConfig, boxNameFor, requireBoxProvider } from "../src/config.mjs"
 import { sh, q, runScript, applyBoxSettings, describeBoxSettings, requireBoxSettings, wantsBrowser, hasBrowser } from "../src/box.mjs"
 import { getWorkerStates } from "../src/workers.mjs"
 import { secretPaths } from "../src/agents.mjs"
 
 const CONFIG_FILE = new URL("../factory.config.json", import.meta.url)
 const config = loadConfig()
+// Snapshots are built inside a worker's Box. Under the Docker provider there
+// are no Boxes (one container per job), so refuse instead of reaching for
+// Upstash with a worker id or a container name.
+requireBoxProvider(config, "build-snapshot.mjs")
 const shared = process.argv.includes("--shared")
 
 // Text that gives away a secret. factory.secretScanPatterns ADDS to this list,
