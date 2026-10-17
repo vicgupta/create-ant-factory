@@ -42,11 +42,16 @@ add_skill() {
 # --- Another agent CLI (example) ---------------------------------------------
 # sudo npm install --global --silent <agent-cli-package>
 
+# --- OpenCode ------------------------------------------------------------------
+# Third first-class agent option, alongside Claude Code and Codex.
+sudo npm install --global --silent opencode-ai
+
 # --- Check ---------------------------------------------------------------------
 # The build log is the only evidence of what is in the image, and the build
 # must fail when something is missing. List every tool the workers rely on.
 echo "--- check"
 node --version
 git --version
+opencode --version
 # claude --version
 # codex --version

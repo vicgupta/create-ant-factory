@@ -14,13 +14,13 @@ RUN apt-get update \
   && rm -rf /var/lib/apt/lists/*
 
 # The two agent CLIs the template ships with. Pin or drop as needed.
-RUN npm install --global --silent @anthropic-ai/claude-code @openai/codex
+RUN npm install --global --silent @anthropic-ai/claude-code @openai/codex opencode-ai
 
 RUN mkdir -p /workspace/home/work /workspace/home/.factory
 WORKDIR /workspace/home/work
 
 # --- check -------------------------------------------------------------------
-RUN node --version && git --version && claude --version && codex --version
+RUN node --version && git --version && claude --version && codex --version && opencode --version
 
 # The factory keeps the container alive and drives it with `docker exec`;
 # it is removed when the job ends.

@@ -2,7 +2,7 @@
 // no network. Run with: npm test   (node --test tests/)
 import { test } from "node:test"
 import assert from "node:assert/strict"
-import { mkdtempSync, writeFileSync } from "node:fs"
+import { mkdtempSync, writeFileSync, readFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { loadConfig } from "../src/config.mjs"
@@ -141,5 +141,17 @@ test("a boxNamePrefix with spaces or slashes is rejected", () => {
 test("ordinary boxNamePrefix values load", () => {
   for (const boxNamePrefix of ["factory-", "acme_factory.", "f1-"]) {
     assert.equal(load({ boxNamePrefix }).factory.boxNamePrefix, boxNamePrefix)
+  }
+})
+
+test("the template's agent types each have a summary delivery path", () => {
+  const template = JSON.parse(readFileSync(new URL("../factory.config.json", import.meta.url), "utf8"))
+  const agents = template.agents
+  assert.ok(Object.keys(agents).length >= 1, "template defines at least one agent type")
+  for (const [name, agent] of Object.entries(agents)) {
+    assert.ok(agent.command, `${name} has a command`)
+    const viaCommand = agent.command.includes("{summary}")
+    const viaExtra = (agent.promptExtra ?? "").includes("{summary}")
+    assert.ok(viaCommand || viaExtra, `${name} delivers the summary through {summary} in command or promptExtra`)
   }
 })
