@@ -57,6 +57,18 @@
       },
       "boxSettings": "ask",
       "command": "codex exec --skip-git-repo-check --dangerously-bypass-approvals-and-sandbox --output-last-message {summary} \"$(cat {prompt})\""
+    },
+    "opencode": {
+      "description": "OpenCode signed in with an Anthropic API key. Any models.dev provider works — see references/agents.md in the skill.",
+      "auth": [
+        {
+          "secret": "ANTHROPIC_API_KEY",
+          "env": "ANTHROPIC_API_KEY"
+        }
+      ],
+      "boxSettings": "ask",
+      "promptExtra": "When you are done, write your summary to the file {summary}, and nothing else to that file.",
+      "command": "opencode run --auto \"$(cat {prompt})\" < /dev/null"
     }
   },
   "repos": [
