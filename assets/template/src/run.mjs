@@ -198,7 +198,7 @@ async function main() {
   claimedAgent = worker.agent
   record.worker = worker.id
   record.agent = worker.agent
-  console.log(`Worker ${worker.id} (${worker.agent}) claimed. ${box.kind === "docker" ? "Container" : box.kind === "daytona" ? "Daytona sandbox" : "Box"}: ${box.id}`)
+  console.log(`Worker ${worker.id} (${worker.agent}) claimed. ${box.kind === "docker" ? "Container" : box.kind === "daytona" ? "Daytona sandbox" : box.kind === "e2b" ? "E2B sandbox" : "Box"}: ${box.id}`)
 
   try {
     await removeLabel(repo.repo, issue.number, labels.ready)
@@ -554,7 +554,7 @@ async function main() {
       base: repo.baseBranch,
       title,
       draft: Boolean(gate && gate.decision !== "ready"),
-      body: `Closes #${issue.number}\n\n${description}${planBody}${gateSection}${reviewSection}\n\n---\nBuilt by factory worker \`${worker.id}\` (${worker.agent}) in ${box.kind === "docker" ? "a Docker container" : box.kind === "daytona" ? "a Daytona sandbox" : "an Upstash Box"}. ${checkLine}${runUrl ? ` [Factory run](${runUrl}).` : ""}`,
+      body: `Closes #${issue.number}\n\n${description}${planBody}${gateSection}${reviewSection}\n\n---\nBuilt by factory worker \`${worker.id}\` (${worker.agent}) in ${box.kind === "docker" ? "a Docker container" : box.kind === "daytona" ? "a Daytona sandbox" : box.kind === "e2b" ? "an E2B sandbox" : "an Upstash Box"}. ${checkLine}${runUrl ? ` [Factory run](${runUrl}).` : ""}`,
     })
     console.log(`\nPull request: ${pr.html_url}${pr.draft ? " (draft)" : ""}`)
     record.pullRequest = pr.html_url

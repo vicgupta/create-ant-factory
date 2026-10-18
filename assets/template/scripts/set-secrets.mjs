@@ -3,7 +3,7 @@
 //
 // The factory repo gets the GitHub token, every agent sign-in secret named in
 // factory.config.json and, with the Box provider only, the Box key (with the
-// Daytona provider only, DAYTONA_API_KEY). Each app
+// Daytona provider only, DAYTONA_API_KEY; with E2B only, E2B_API_KEY). Each app
 // repo only gets the GitHub token, which its trigger workflow uses to start
 // the factory. src/secrets.mjs secretPlan() builds the list.
 //

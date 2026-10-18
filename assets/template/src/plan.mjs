@@ -1,5 +1,5 @@
 // Dry run. Reads the incoming issue, checks it against the config, and prints
-// which worker would take it. It changes nothing on GitHub, Upstash, Docker or Daytona.
+// which worker would take it. It changes nothing on GitHub, Upstash, Docker, Daytona or E2B.
 //
 // Run with: node --env-file=.env src/plan.mjs owner/app-repo 12
 import { loadConfig, findRepo } from "./config.mjs"
@@ -8,6 +8,7 @@ import { getWorkerStates, pickWorker } from "./workers.mjs"
 import { workerProvider, workerNoun } from "./config.mjs"
 import { createDockerWorker } from "./docker.mjs"
 import { createDaytonaWorker } from "./daytona.mjs"
+import { createE2BWorker } from "./e2b.mjs"
 import { resumeEnabled, findFactoryPullRequest } from "./review.mjs"
 import { planFirstEnabled } from "./plan-first.mjs"
 import { contextGraphEnabled } from "./context.mjs"
@@ -65,6 +66,11 @@ async function main() {
     // no secret), call nothing.
     const { request } = await createDaytonaWorker(config, worker, "plan", { dryRun: true })
     console.log(`\nPlan: worker ${worker.id} (${worker.agent}) would take this issue in a new Daytona sandbox.`)
+    console.log(`Would call: ${request.method} ${request.url} ${JSON.stringify(request.body)}`)
+  } else if (workerProvider(config) === "e2b") {
+    // Same for E2B: the exact create request (no secret in it), nothing called.
+    const { request } = await createE2BWorker(config, worker, "plan", { dryRun: true })
+    console.log(`\nPlan: worker ${worker.id} (${worker.agent}) would take this issue in a new E2B sandbox.`)
     console.log(`Would call: ${request.method} ${request.url} ${JSON.stringify(request.body)}`)
   } else {
     console.log(`\nPlan: worker ${worker.id} (${worker.agent}) would take this issue in Box ${worker.boxName}.`)

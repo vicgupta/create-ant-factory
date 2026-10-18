@@ -76,7 +76,7 @@ All `setup` commands run as one bash login script, and so do all `checks`. State
 
 | Key | Required | Meaning |
 |---|---|---|
-| `provider` | no | `"docker"` (default; one container per job on your own Docker host), `"box"` (Upstash Boxes) or `"daytona"` (one Daytona cloud sandbox per job). See `providers.md`. |
+| `provider` | no | `"docker"` (default; one container per job on your own Docker host), `"box"` (Upstash Boxes) `"daytona"` (one Daytona cloud sandbox per job) or `"e2b"` (one E2B cloud sandbox per job). See `providers.md`. |
 | `docker.image` | no | Worker image for the Docker provider. Default `create-ant-factory-worker:latest`, built from `worker/Dockerfile`. |
 | `docker.cpus`, `docker.memory` | no | Per-container limits for the Docker provider (`--cpus` / `--memory`). Defaults `"2"` and `"4g"`. |
 | `docker.host` | no | One Docker endpoint (`-H`), for example `"tcp://10.0.1.20:2376"`. Wins over `DOCKER_HOST`. Left out: `DOCKER_HOST` / docker context decides. Verification (`check-setup`, `scripts/verify-docker.mjs`) reports against this target. |
@@ -90,6 +90,13 @@ The Docker host itself is not config: the docker CLI's `DOCKER_HOST` environment
 | `daytona.startTimeoutMinutes` | no | How long a job waits for its sandbox to reach `started`. Default `5`. |
 
 The Daytona API key is never config: it is `DAYTONA_API_KEY` in `.env` and a repository secret of the same name for Actions (`scripts/set-secrets.mjs` sets it when the provider is `"daytona"`). A key under `worker.daytona` is refused by the loader.
+
+| `e2b.template` | no | E2B template name or id every job sandbox starts from, for example `"create-ant-factory-worker"` (built from `worker/Dockerfile`, see `providers.md`). Default `"base"`, E2B's public image, which has no agent CLIs; `check-setup` notes it. |
+| `e2b.timeoutMinutes` | no | Sliding sandbox timeout. Every command extends the sandbox's life to this many minutes from now, so a live job never expires and an orphan dies within it. Default `30`; 1 to 1440 (E2B caps it by plan). |
+| `e2b.domain` | no | E2B domain. Wins over `E2B_DOMAIN`. Default `e2b.app`; set it for a self-hosted E2B. |
+| `e2b.apiUrl` | no | E2B API base URL. Wins over `E2B_API_URL`. Default `https://api.<domain>`. |
+
+The E2B API key is never config either: it is `E2B_API_KEY` in `.env` and a repository secret of the same name for Actions (`scripts/set-secrets.mjs` sets it when the provider is `"e2b"`). A key under `worker.e2b` is refused by the loader.
 
 ## workers
 
