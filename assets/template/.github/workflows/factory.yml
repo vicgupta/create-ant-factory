@@ -43,6 +43,11 @@ jobs:
       DAYTONA_API_KEY: ${{ secrets.DAYTONA_API_KEY }}
       DAYTONA_API_URL: ${{ vars.DAYTONA_API_URL }}
       DAYTONA_TARGET: ${{ vars.DAYTONA_TARGET }}
+      # Only used when worker.provider is "e2b". Same split: the key is a
+      # secret; the domain (self-hosted E2B) and API URL may stay unset.
+      E2B_API_KEY: ${{ secrets.E2B_API_KEY }}
+      E2B_DOMAIN: ${{ vars.E2B_DOMAIN }}
+      E2B_API_URL: ${{ vars.E2B_API_URL }}
       FACTORY_GITHUB_TOKEN: ${{ secrets.FACTORY_GITHUB_TOKEN }}
       # Every secret as one JSON blob. The agents' sign-in secrets are read from
       # it by name, so adding an agent never means editing this file.

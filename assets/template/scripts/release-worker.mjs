@@ -9,7 +9,9 @@
 // no longer marks the worker busy but still holds the job's sign-in files.
 //
 // With the Daytona provider it is the same idea: every factory sandbox
-// labelled worker=<id>, running or stopped, is deleted.
+// labelled worker=<id>, running or stopped, is deleted. With E2B, every
+// factory sandbox whose metadata names the worker, running or paused, is
+// killed.
 //
 // Run with: node --env-file=.env scripts/release-worker.mjs <worker id>
 import { Box } from "@upstash/box"
@@ -19,6 +21,7 @@ import { sh, q } from "../src/box.mjs"
 import { secretPaths } from "../src/agents.mjs"
 import { listDockerWorkers, containersForWorker, removeDockerWorker, dockerHandle } from "../src/docker.mjs"
 import { listDaytonaWorkers, sandboxesForWorker, deleteDaytonaSandboxes } from "../src/daytona.mjs"
+import { listE2BWorkers, e2bSandboxesForWorker, killE2BSandboxes } from "../src/e2b.mjs"
 
 const config = loadConfig()
 const workerId = process.argv[2]
@@ -50,6 +53,20 @@ if (workerProvider(config) === "daytona") {
   }
   await deleteDaytonaSandboxes(config, stuck)
   for (const sandbox of stuck) console.log(`Deleted leftover Daytona sandbox ${sandbox.name} (${sandbox.state})`)
+  console.log(`Worker ${worker.id} is free.`)
+  process.exit(0)
+}
+
+if (workerProvider(config) === "e2b") {
+  const worker = config.workers.find((w) => w.id === workerId)
+  if (!worker) throw new Error("Usage: release-worker.mjs <worker id>")
+  const stuck = e2bSandboxesForWorker(await listE2BWorkers(config), worker.id)
+  if (stuck.length === 0) {
+    console.log(`No factory sandboxes, running or paused, exist for worker ${worker.id}. Nothing to release.`)
+    process.exit(0)
+  }
+  await killE2BSandboxes(config, stuck)
+  for (const sandbox of stuck) console.log(`Killed leftover E2B sandbox ${sandbox.name} (${sandbox.state})`)
   console.log(`Worker ${worker.id} is free.`)
   process.exit(0)
 }

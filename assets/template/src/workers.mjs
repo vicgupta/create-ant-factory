@@ -5,10 +5,13 @@
 // at the end, so there is no paused/idle state to report. The Daytona
 // provider (worker.provider: "daytona") works the same way with one sandbox
 // per job, labelled worker=<id>: busy while one is not stopped or deleted.
+// The E2B provider (worker.provider: "e2b") is the same again, with the
+// worker id in the sandbox metadata: busy while one is running.
 import { Box } from "@upstash/box"
 import { boxNameFor, workerProvider } from "./config.mjs"
 import { listDockerWorkers } from "./docker.mjs"
 import { listDaytonaWorkers } from "./daytona.mjs"
+import { listE2BWorkers } from "./e2b.mjs"
 
 export async function getWorkerStates(config) {
   if (workerProvider(config) === "docker") {
@@ -23,6 +26,8 @@ export async function getWorkerStates(config) {
   }
 
   if (workerProvider(config) === "daytona") return daytonaWorkerStates(config, await listDaytonaWorkers(config))
+  // Same row shape ({ id, name, state, busy, labels }), so the same mapping.
+  if (workerProvider(config) === "e2b") return daytonaWorkerStates(config, await listE2BWorkers(config))
 
   const boxes = await Box.list({ label: config.factory.boxLabel })
   const byName = new Map(boxes.map((b) => [b.name, b]))
@@ -36,8 +41,8 @@ export async function getWorkerStates(config) {
   })
 }
 
-// Pure: worker states from the factory's Daytona sandboxes (rows from
-// listDaytonaWorkers). Exported for the tests.
+// Pure: worker states from the factory's Daytona or E2B sandboxes (rows from
+// listDaytonaWorkers / listE2BWorkers). Exported for the tests.
 export function daytonaWorkerStates(config, sandboxes) {
   return config.workers.map((worker) => {
     const sandbox = sandboxes.find((s) => s.busy && s.labels?.worker === worker.id)

@@ -25,6 +25,7 @@ export function collectSecrets(config, { agentName, repo } = {}) {
   add(process.env.FACTORY_GITHUB_TOKEN)
   // Never sent into a sandbox, but an API error could still echo it.
   add(process.env.DAYTONA_API_KEY)
+  add(process.env.E2B_API_KEY)
   try {
     for (const value of Object.values(JSON.parse(process.env.FACTORY_SECRETS_JSON ?? "{}"))) add(value)
   } catch {

@@ -258,10 +258,10 @@ export function loadConfig(file = CONFIG_FILE) {
 
   if (config.worker !== undefined) {
     if (!config.worker || typeof config.worker !== "object" || Array.isArray(config.worker)) {
-      errors.push('"worker" must be an object like { "provider": "docker", "docker": { ... } }, { "provider": "daytona", "daytona": { ... } } or { "provider": "box" }')
+      errors.push('"worker" must be an object like { "provider": "docker", "docker": { ... } }, { "provider": "daytona", "daytona": { ... } }, { "provider": "e2b", "e2b": { ... } } or { "provider": "box" }')
     } else {
       const provider = config.worker.provider ?? "box"
-      if (!WORKER_PROVIDERS.includes(provider)) errors.push(`worker.provider "${provider}" must be "docker" (the default), "box" or "daytona"`)
+      if (!WORKER_PROVIDERS.includes(provider)) errors.push(`worker.provider "${provider}" must be "docker" (the default), "box", "daytona" or "e2b"`)
       if (provider === "docker" || config.worker.docker !== undefined) {
         const docker = dockerConfig(config)
         if (!docker.image) errors.push("worker.docker.image must name the worker image to run")
@@ -273,6 +273,9 @@ export function loadConfig(file = CONFIG_FILE) {
       // numbers live here; the API key is DAYTONA_API_KEY in the environment
       // and never belongs in this file.
       if (provider === "daytona" || config.worker.daytona !== undefined) errors.push(...daytonaConfigErrors(config.worker.daytona))
+      // E2B: one cloud sandbox per job (src/e2b.mjs), same rule: the key is
+      // E2B_API_KEY in the environment, never in this file.
+      if (provider === "e2b" || config.worker.e2b !== undefined) errors.push(...e2bConfigErrors(config.worker.e2b))
     }
   }
 
@@ -305,7 +308,7 @@ export function isValidBranchPrefix(prefix) {
   return true
 }
 
-export const WORKER_PROVIDERS = ["box", "docker", "daytona"]
+export const WORKER_PROVIDERS = ["box", "docker", "daytona", "e2b"]
 
 // Pure: what is wrong with a worker.daytona block (an empty list when it is
 // fine or left out). Exported for the tests.
@@ -343,6 +346,37 @@ export function daytonaConfig(config, env = process.env) {
   }
 }
 
+// Pure: what is wrong with a worker.e2b block (an empty list when it is fine
+// or left out). Exported for the tests.
+export function e2bConfigErrors(e2b) {
+  if (e2b === undefined) return []
+  if (!e2b || typeof e2b !== "object" || Array.isArray(e2b)) return ['worker.e2b must be an object like { "template": "create-ant-factory-worker" }']
+  const errors = []
+  if (e2b.template !== undefined && (typeof e2b.template !== "string" || !/^[A-Za-z0-9][A-Za-z0-9._:/-]*$/.test(e2b.template))) errors.push('worker.e2b.template must be an E2B template name or id with no spaces (for example "create-ant-factory-worker"), or left out')
+  if (e2b.domain !== undefined && (typeof e2b.domain !== "string" || !/^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$/i.test(e2b.domain))) errors.push('worker.e2b.domain must be a host name such as "e2b.app" (self-hosted E2B), or left out to use E2B_DOMAIN / the E2B cloud')
+  if (e2b.apiUrl !== undefined && (typeof e2b.apiUrl !== "string" || !/^https?:\/\/[^\s]+$/.test(e2b.apiUrl))) errors.push('worker.e2b.apiUrl must be an http(s) URL such as "https://api.e2b.app", or left out to use E2B_API_URL / https://api.<domain>')
+  if (e2b.timeoutMinutes !== undefined && (!Number.isInteger(e2b.timeoutMinutes) || e2b.timeoutMinutes < 1 || e2b.timeoutMinutes > 1440)) errors.push("worker.e2b.timeoutMinutes must be a whole number of minutes from 1 to 1440 (E2B caps it by plan: 60 on Hobby, 1440 on Pro)")
+  for (const key of ["apiKey", "key", "token", "accessToken"]) if (e2b[key] !== undefined) errors.push(`worker.e2b.${key} must not be in factory.config.json: put the key in E2B_API_KEY (.env locally, a repository secret in Actions)`)
+  return errors
+}
+
+export const E2B_DEFAULTS = { template: "base", domain: "e2b.app", timeoutMinutes: 30 }
+
+// E2B settings with defaults filled in. Like daytonaConfig: the config wins
+// over the environment (E2B_DOMAIN, E2B_API_URL, the variables the E2B SDK
+// and CLI read), and an empty environment value counts as unset. apiUrl
+// follows the domain unless it is given: https://api.<domain>.
+export function e2bConfig(config, env = process.env) {
+  const e2b = config.worker?.e2b ?? {}
+  const domain = String(e2b.domain ?? (env.E2B_DOMAIN || E2B_DEFAULTS.domain)).replace(/^\.+|\.+$/g, "")
+  return {
+    template: e2b.template ?? E2B_DEFAULTS.template,
+    domain,
+    apiUrl: String(e2b.apiUrl ?? (env.E2B_API_URL || `https://api.${domain}`)).replace(/\/+$/, ""),
+    timeoutMinutes: e2b.timeoutMinutes ?? E2B_DEFAULTS.timeoutMinutes,
+  }
+}
+
 // Which worker provider runs jobs. The template ships "docker". The "box"
 // fallback stays so factories created before the Docker default (with no
 // "worker" section at all) keep behaving exactly as before.
@@ -353,12 +387,12 @@ export function workerProvider(config) {
 // What a worker's unit of execution is called in user-facing text: "Box" for
 // the Upstash provider, "Container" for the Docker provider (one container is
 // created per job and removed when the job ends), "Sandbox" for the Daytona
-// provider (one sandbox per job, deleted when the job ends). Capitalised, for
-// the start of a column. Kept in one place so status.mjs and plan.mjs cannot
+// and E2B providers (one sandbox per job, deleted when the job ends).
+// Capitalised, for the start of a column. Kept in one place so status.mjs and plan.mjs cannot
 // disagree.
 export function workerNoun(config) {
   const provider = workerProvider(config)
-  return provider === "docker" ? "Container" : provider === "daytona" ? "Sandbox" : "Box"
+  return provider === "docker" ? "Container" : provider === "daytona" || provider === "e2b" ? "Sandbox" : "Box"
 }
 
 // Box-only scripts (provision-workers, delete-workers, smoke-test,
@@ -374,10 +408,17 @@ export function workerNoun(config) {
 //
 // The Daytona provider has no Boxes either (one sandbox per job, deleted when
 // the job ends), so it is refused the same way, pointing at check-setup,
-// which verifies the Daytona key, API and snapshot.
+// which verifies the Daytona key, API and snapshot. E2B likewise (key, API
+// and template).
 export function requireBoxProvider(config, scriptName) {
   const provider = workerProvider(config)
   if (provider === "box") return
+  if (provider === "e2b") {
+    throw new Error(
+      `worker.provider is "e2b", so ${scriptName} has nothing to do: it manages Upstash Boxes, and this factory has none. ` +
+        `An E2B factory creates one sandbox per job and kills it when the job ends; verify the E2B key, API and template with "node --env-file=.env scripts/check-setup.mjs" instead.`,
+    )
+  }
   if (provider === "daytona") {
     throw new Error(
       `worker.provider is "daytona", so ${scriptName} has nothing to do: it manages Upstash Boxes, and this factory has none. ` +

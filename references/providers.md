@@ -1,11 +1,11 @@
-# Worker providers: Docker, Box or Daytona
+# Worker providers: Docker, Box, Daytona or E2B
 
 A worker is wherever one job's agent actually runs. `worker.provider` in
 `factory.config.json` chooses it. Docker is the default for new factories:
 free, local, and the code never leaves your machine. Upstash Box remains
 for when you'd rather not run a host at all. Daytona runs one cloud
 sandbox per job, created and deleted like a Docker container (see
-"Daytona" below).
+"Daytona" below), and E2B does the same on E2B's sandboxes (see "E2B").
 
 ```json
 "worker": {
@@ -198,10 +198,73 @@ Not there yet: no Upstash-style browser (install one in the snapshot if the
 agent needs it), and resources come from the snapshot (`daytona snapshot
 push --cpu/--memory/--disk`), not from `factory.config.json`.
 
+## E2B
+
+```json
+"worker": {
+  "provider": "e2b",
+  "e2b": { "template": "create-ant-factory-worker", "timeoutMinutes": 30 }
+}
+```
+
+One E2B sandbox per job, through E2B's public REST API and the sandbox's
+own daemon (envd) (`src/e2b.mjs`; no SDK dependency, the same thin
+injectable-`fetch` layer as Daytona). Same Docker shape again: nothing
+exists between jobs, a running sandbox whose metadata says `worker=<id>` is
+the busy marker, and the sandbox is killed at the end of the job, success
+or failure. A GitHub-hosted runner can reach it, so no self-hosted runner.
+
+Setup:
+
+1. Create an API key in the E2B dashboard and put it in `.env` as
+   `E2B_API_KEY`. `scripts/set-secrets.mjs` copies it to the factory repo's
+   secrets when the provider is `"e2b"`; the workflow passes it through,
+   plus the optional repository variables `E2B_DOMAIN` and `E2B_API_URL`
+   (self-hosted E2B). The key never goes in `factory.config.json` and is
+   never sent into a sandbox.
+2. Build the worker image as an E2B template from `worker/Dockerfile`,
+   with the E2B CLI (`e2b template build --dockerfile worker/Dockerfile
+   --name create-ant-factory-worker`) or the E2B Template SDK
+   (`Template().fromDockerfile(...)`, then `Template.build`). Set
+   `worker.e2b.template` to its name or id. Left out, sandboxes start from
+   E2B's public `base` template, which has no agent CLIs. CPU and memory
+   come from the template.
+3. `node --env-file=.env scripts/check-setup.mjs` verifies the key (it must
+   list sandboxes), the API and that the template exists on your team and is
+   `ready`. It creates nothing. `src/plan.mjs` prints the exact create
+   request and calls nothing.
+
+What a job does: `POST /v2/sandboxes` (`templateID`, `timeout`,
+`autoPause: false`, metadata `create-ant-factory=true`, `worker`, `run-id`,
+`name`), then drives the sandbox through envd at
+`https://49983-<id>.<domain>` with the per-sandbox access token from the
+create response: `process.Process/Start` (a Connect stream; each command
+runs as `/bin/bash -l -c`, with `HOME=/workspace/home`) and `POST /files`
+for prompt and sign-in files. Those are exactly the two primitives a Box
+offers. The sandbox is killed if its workspace cannot be prepared, and
+always when the job ends.
+
+Timeout, the E2B way: an E2B sandbox lives for `timeout` seconds and is
+then killed. The factory makes that a sliding deadline: every command the
+job sends first extends it to `timeoutMinutes` from now (at most once a
+minute; `runScript` polls every 10 s, so a long agent run keeps it alive).
+A sandbox a killed runner left behind therefore dies on its own within
+`timeoutMinutes`, default 30. E2B caps the value by plan (1 hour on Hobby, 24 hours
+on Pro); the loader accepts 1 to 1440.
+
+Cleanup: `scripts/release-worker.mjs <worker id>` kills every factory
+sandbox of that worker, running or paused. The Box-only scripts
+(`provision-workers`, `delete-workers`, `smoke-test`, `build-snapshot`,
+`apply-box-settings`, `box-exec`) refuse to run under E2B.
+
+Not there yet: no Upstash-style browser (install one in the template if the
+agent needs it), and resources come from the template, not from
+`factory.config.json`.
+
 ## Future providers
 
-E2B and similar sandboxes would slot in behind the same seam: a provider
-that starts one isolated workspace per job, exposes shell + file-write to
-it, reports busy workers, and removes the workspace at the end
-(`src/docker.mjs` and `src/daytona.mjs` are the worked examples). They are
-not implemented; do not add config for them until one is.
+Other sandboxes slot in behind the same seam: a provider that starts one
+isolated workspace per job, exposes shell + file-write to it, reports busy
+workers, and removes the workspace at the end (`src/docker.mjs`,
+`src/daytona.mjs` and `src/e2b.mjs` are the worked examples). Do not add
+config for one until it is implemented.

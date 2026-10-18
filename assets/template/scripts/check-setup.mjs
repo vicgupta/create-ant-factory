@@ -5,7 +5,9 @@
 // self-removing `docker run --rm <image> true` smoke container, nothing kept.
 // With the Daytona provider it runs verifyDaytona(): DAYTONA_API_KEY has a
 // value, the key lists sandboxes, and the configured snapshot is active.
-// Read-only: it creates no sandbox.
+// Read-only: it creates no sandbox. With the E2B provider it runs
+// verifyE2B(): E2B_API_KEY has a value, the key lists sandboxes, and the
+// configured template is built and ready. Also read-only.
 //
 // Run with: node --env-file=.env scripts/check-setup.mjs
 import { spawnSync } from "node:child_process"
@@ -14,6 +16,7 @@ import { Box } from "@upstash/box"
 import { loadConfig, usedAgents, workerProvider, dockerConfig } from "../src/config.mjs"
 import { verifyDocker } from "../src/docker.mjs"
 import { verifyDaytona } from "../src/daytona.mjs"
+import { verifyE2B } from "../src/e2b.mjs"
 import { readSecret } from "../src/agents.mjs"
 import { describeBoxSettings } from "../src/box.mjs"
 
@@ -47,7 +50,7 @@ try {
 if (config) {
   console.log("\nSecrets (values are never shown)")
   const provider = workerProvider(config)
-  const entries = [...(provider === "box" ? [{ secret: "UPSTASH_BOX_API_KEY" }] : []), ...(provider === "daytona" ? [{ secret: "DAYTONA_API_KEY" }] : []), { secret: "FACTORY_GITHUB_TOKEN" }, ...usedAgents(config).flatMap((name) => config.agents[name].auth ?? []), ...config.repos.flatMap((r) => r.secrets ?? [])]
+  const entries = [...(provider === "box" ? [{ secret: "UPSTASH_BOX_API_KEY" }] : []), ...(provider === "daytona" ? [{ secret: "DAYTONA_API_KEY" }] : []), ...(provider === "e2b" ? [{ secret: "E2B_API_KEY" }] : []), { secret: "FACTORY_GITHUB_TOKEN" }, ...usedAgents(config).flatMap((name) => config.agents[name].auth ?? []), ...config.repos.flatMap((r) => r.secrets ?? [])]
   for (const entry of entries) {
     const value = readSecret(entry)
     value ? ok(`${entry.secret} is set (${value.length} characters)`) : bad(`${entry.secret} has no value in .env${entry.localFile ? ` or in ${entry.localFile}` : ""}`)
@@ -89,6 +92,19 @@ if (config) {
       else note(check.message)
     }
     note("One sandbox per job, deleted when the job ends; an orphaned one stops when idle (worker.daytona.autoStopMinutes) and then deletes itself.")
+  }
+
+  if (provider === "e2b") {
+    // Same idea for E2B: it creates nothing. src/plan.mjs prints the exact
+    // create request; the first real sandbox is the factory's first job.
+    console.log("\nE2B worker provider (verifying the key, API and template)")
+    const result = await verifyE2B(config)
+    for (const check of result.checks) {
+      if (check.status === "ok") ok(check.message)
+      else if (check.status === "fail") bad(check.message)
+      else note(check.message)
+    }
+    note("One sandbox per job, killed when the job ends; every command extends its timeout, so an orphaned one expires within worker.e2b.timeoutMinutes.")
   }
 
   console.log("\nUpstash Box")

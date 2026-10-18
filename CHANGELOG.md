@@ -7,6 +7,27 @@ loosely "Keep a Changelog"; versions are git tags (`0.1`, `0.2`, …).
 
 ### Features
 
+- E2B worker provider (`"worker": { "provider": "e2b" }`, opt-in; Box,
+  Docker and Daytona behave exactly as before). `src/e2b.mjs` creates one
+  E2B sandbox per job through E2B's public REST API (`POST /v2/sandboxes`,
+  list by metadata, `DELETE` to kill) and drives it through the sandbox's
+  envd daemon (`process.Process/Start` over Connect, `POST /files`), behind
+  the same `exec.command()` / `files.write()` handle the other providers
+  use, so `run.mjs`, `agents.mjs`, `sh()` and `runScript()` are unchanged.
+  Settings live under `worker.e2b` (`template`, `timeoutMinutes`, `domain`,
+  `apiUrl`), validated by the loader; the key is `E2B_API_KEY` only (a key
+  in the config is refused), with optional `E2B_DOMAIN` / `E2B_API_URL`.
+  Sandboxes are created with `autoPause: false` and a sliding timeout that
+  every command extends, so a live job never expires and an orphan dies
+  within `timeoutMinutes` (default 30). A sandbox whose workspace cannot be
+  prepared is killed. `check-setup.mjs` requires the key and verifies it,
+  the API and the template (read-only); `plan.mjs` prints the create
+  request; `set-secrets.mjs` and the workflow pass the key through;
+  `release-worker.mjs` kills a worker's leftover sandboxes; run records
+  carry `provider: "e2b"`; the Box-only scripts refuse under E2B.
+  `tests/e2b.test.mjs` pins every request shape, the Connect framing and
+  the keep-alive with a fake `fetch`, without an E2B account.
+
 - Daytona worker provider (`"worker": { "provider": "daytona" }`, opt-in;
   Box and Docker behave exactly as before). `src/daytona.mjs` creates one
   Daytona sandbox per job through Daytona's public REST API (create, wait
