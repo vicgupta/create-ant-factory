@@ -1,0 +1,49 @@
+# Skill CI for create-ant-factory. Copy to .github/workflows/skill-ci.yml in
+# this repo (pushing workflow files needs a token with the `workflow` scope).
+#
+# - validate-skill: frontmatter, referenced paths, template wiring and the
+#   trigger cases (offline, no secrets).
+# - template tests: the factory template's own test suite.
+# - trigger evals: only when the ANTHROPIC_API_KEY secret exists; forks and
+#   PRs without it get a dry run instead of a failure.
+name: Skill CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Validate the skill
+        run: node evals/validate-skill.mjs
+      - name: Skill eval tests
+        run: node --test evals/tests/
+      - name: Template tests
+        working-directory: assets/template
+        run: |
+          npm ci || npm install
+          npm test
+
+  trigger-evals:
+    runs-on: ubuntu-latest
+    needs: validate
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Trigger evals
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          SKILL_EVAL_MODEL: ${{ vars.SKILL_EVAL_MODEL }}
+        run: node evals/trigger-evals.mjs

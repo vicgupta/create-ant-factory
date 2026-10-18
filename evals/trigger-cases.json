@@ -1,0 +1,28 @@
+{
+  "skill": "create-ant-factory",
+  "minPositive": 6,
+  "minNegative": 6,
+  "passThreshold": 0.85,
+  "distractors": [
+    { "name": "github-actions-ci", "description": "Write or fix GitHub Actions CI workflows: build, test and lint jobs, caching, matrices and release pipelines. Use this for CI configuration that does not involve coding agents." },
+    { "name": "docker-compose-dev", "description": "Create Dockerfiles and docker-compose setups for local development environments and services. Use this when someone wants to containerize an app or run services locally." },
+    { "name": "pr-review", "description": "Review an existing pull request: read the diff, run tests, leave review comments and approve or request changes. Use this when someone asks for a code review." },
+    { "name": "issue-triage", "description": "Triage GitHub issues: label, deduplicate, prioritise and summarise an issue backlog. Use this for backlog grooming and issue hygiene." },
+    { "name": "write-code", "description": "General-purpose coding help in the current repository: implement a function, fix a bug, refactor a module. Use this for direct coding requests." }
+  ],
+  "cases": [
+    { "id": "build-factory", "prompt": "Help me set up a software factory where I label a GitHub issue and an agent opens a PR for it.", "shouldTrigger": true, "why": "The core use case, named directly.", "anchors": ["software factory"] },
+    { "id": "agents-on-issues", "prompt": "I want Claude Code agents that work on my GitHub issues in the background while I sleep.", "shouldTrigger": true, "why": "Describes the factory without naming it.", "anchors": ["agents that work on my GitHub issues"] },
+    { "id": "label-trigger", "prompt": "Can you build a label-triggered workflow so that adding 'ready' to an issue starts a coding agent in a sandbox?", "shouldTrigger": true, "why": "Label trigger plus sandboxed agent.", "anchors": ["label-triggered agent workflow"] },
+    { "id": "pool-of-agents", "prompt": "Set up a pool of background coding agents running in Docker containers that turn issues into pull requests.", "shouldTrigger": true, "why": "Worker pool in Docker, issue to PR.", "anchors": ["pool of background coding agents"] },
+    { "id": "debug-pipeline", "prompt": "My issue-to-PR pipeline keeps leaving issues stuck on factory:running. Can you debug it?", "shouldTrigger": true, "why": "Debugging an existing factory.", "anchors": ["issue-to-PR pipeline", "debug"] },
+    { "id": "add-repo", "prompt": "Add another app repo and a Codex worker to my factory.", "shouldTrigger": true, "why": "Extending a factory built this way.", "anchors": ["add a repo, an agent type, workers"] },
+    { "id": "worker-image", "prompt": "Rebuild the worker image for the factory so the agents have Python 3.12 preinstalled.", "shouldTrigger": true, "why": "Worker image changes belong to the skill.", "anchors": ["worker image"] },
+    { "id": "plain-ci", "prompt": "Add a GitHub Actions workflow that runs npm test on every push.", "shouldTrigger": false, "why": "Plain CI, no coding agents." },
+    { "id": "review-pr", "prompt": "Review PR #42 in my repo and tell me if it is safe to merge.", "shouldTrigger": false, "why": "A one-off code review, not a pipeline." },
+    { "id": "fix-bug", "prompt": "Fix the off-by-one error in src/pagination.ts.", "shouldTrigger": false, "why": "Direct coding in the current repo." },
+    { "id": "compose", "prompt": "Write a docker-compose file for Postgres and Redis for local development.", "shouldTrigger": false, "why": "Containers, but nothing to do with agents or issues." },
+    { "id": "triage", "prompt": "Go through my open GitHub issues and label the duplicates.", "shouldTrigger": false, "why": "Issue hygiene, no agent pipeline." },
+    { "id": "release-notes", "prompt": "Draft release notes from the pull requests merged this week.", "shouldTrigger": false, "why": "Reads PRs but builds nothing." }
+  ]
+}
