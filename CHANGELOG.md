@@ -5,6 +5,14 @@ loosely "Keep a Changelog"; versions are git tags (`0.1`, `0.2`, …).
 
 ## Unreleased
 
+## 0.3 — 2026-10-18
+
+Twenty-one pull requests since 0.2 (#32–#52), each reviewed with its test
+suite run before merge. Four worker providers (Box, Docker, Daytona, E2B),
+a plan-first phase with risk-based human gates and an independent reviewer
+pass, run records with a report, resume-from-review, scheduled scans, and a
+skill-eval framework with a validator, trigger cases, and a CI template.
+
 ### Features
 
 - Skill evals (`evals/`). `node evals/validate-skill.mjs` checks the SKILL.md
