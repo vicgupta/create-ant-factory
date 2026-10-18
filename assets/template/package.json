@@ -1,6 +1,6 @@
 {
   "name": "software-factory",
-  "version": "0.2",
+  "version": "0.3",
   "private": true,
   "type": "module",
   "description": "Turns ready GitHub issues into pull requests with coding agents in Upstash Boxes",
