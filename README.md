@@ -17,6 +17,7 @@ In the factory repo (the copied template):
 - `assets/template/` — working factory implementation to copy into a new factory repo: `factory.config.json`, `scripts/`, `src/`, `.github/workflows/factory.yml`, `templates/`, `worker/setup.sh`.
 - `references/` — `architecture.md`, `config.md`, `agents.md`, `providers.md`, `upstash-box.md`, `worker-image.md`, `pitfalls.md`.
 - `.env.example` — the secrets every factory needs (values stay local, never committed).
+- `evals/` — skill checks for maintainers: `node evals/validate-skill.mjs` (frontmatter, referenced paths, template wiring, trigger cases; offline) and `node evals/trigger-evals.mjs` (model-graded trigger tests, needs `ANTHROPIC_API_KEY`). See `evals/README.md`; `evals/skill-ci.example.yml` wires both into CI.
 
 ## Use
 

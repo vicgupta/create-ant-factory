@@ -7,6 +7,21 @@ loosely "Keep a Changelog"; versions are git tags (`0.1`, `0.2`, …).
 
 ### Features
 
+- Skill evals (`evals/`). `node evals/validate-skill.mjs` checks the SKILL.md
+  frontmatter (kebab-case `name` up to 64 characters, `description` up to
+  1024 with no angle brackets and a "use this when" sentence), that every
+  path SKILL.md and README.md mention exists under `references/` or
+  `assets/template/`, that every template `npm run` script and workflow
+  `node` step points at a real file, and that `evals/trigger-cases.json` is
+  well formed, with each positive case's `anchors` still present in the
+  description. It is offline and dependency-free and exits 1 on any error
+  (`--strict` fails on warnings too). `node evals/trigger-evals.mjs` asks a
+  model to route each of the 13 cases among this skill and five distractor
+  skills and fails below a 0.85 pass rate; without `ANTHROPIC_API_KEY` it is
+  a dry run that sends nothing. `evals/skill-ci.example.yml` wires both into
+  GitHub Actions (copy it to `.github/workflows/`). `evals/tests/` covers the
+  linter, the CLIs and the eval runner with a fake model.
+
 - E2B worker provider (`"worker": { "provider": "e2b" }`, opt-in; Box,
   Docker and Daytona behave exactly as before). `src/e2b.mjs` creates one
   E2B sandbox per job through E2B's public REST API (`POST /v2/sandboxes`,
